@@ -2,7 +2,7 @@ import type { TaskClassification, TaskInput } from "../schemas/task.js";
 import { TaskClassificationSchema, TaskInputSchema } from "../schemas/task.js";
 
 const ARCHITECTURE_SIGNALS = new Set([
-  "new_dependency",
+  "structural_dependency",
   "new_boundary",
   "new_package",
   "new_app",
@@ -32,14 +32,24 @@ function inferTaskType(input: ReturnType<typeof TaskInputSchema.parse>): TaskCla
 
   if (paths.length > 0 && paths.every((path) => /(^|\/)(docs?\/|readme)|\.mdx?$/.test(path))) return "docs";
   if (paths.length > 0 && paths.every((path) => /\.(css|scss|sass|less)$/.test(path))) return "ui_style";
-  if (/\b(auth|authorization|permission|credential|secret|security)\b/.test(text)) return "security";
-  if (/\b(architecture|boundary|new package|new app|integration strategy)\b/.test(text)) return "architecture";
-  if (/\b(dependency|upgrade package|add package)\b/.test(text)) return "dependency";
-  if (input.reproducibleBug || /\b(bug|regression|fix|defect)\b/.test(text)) return "bugfix";
-  if (/\b(refactor|rename|restructure|cleanup)\b/.test(text)) return "refactor";
-  if (/\b(feature|behavior|behaviour|business rule|regra de negócio|comportamento)\b/.test(text)) return "business_behavior";
+  if (/\b(auth|authorization|permission|credential|secret|security|autenticação|autorização|permissão|credencial|segredo|segurança)\b/.test(text)) return "security";
+  if (/\b(architecture|boundary|new package|new app|integration strategy|arquitetura|fronteira|novo pacote|novo app|novo aplicativo|estratégia de integração)\b/.test(text)) return "architecture";
+  if (/\b(dependency|upgrade package|add package|dependência|atualizar pacote|adicionar pacote)\b/.test(text)) return "dependency_change";
+  if (input.reproducibleBug || /\b(bug|regression|fix|defect|erro|falha|corrigir|defeito)\b/.test(text)) return "bugfix";
+  if (/\b(refactor|rename|restructure|cleanup|refatorar|refatoração|renomear|reestruturar|limpeza)\b/.test(text)) return "refactor";
+  if (/\b(feature|behavior|behaviour|business rule|regra de negócio|nova regra|comportamento|funcionalidade)\b/.test(text)) return "business_behavior";
   if (paths.some((path) => /(^|\/)(infra|config|deploy|terraform|\.github)(\/|$)/.test(path))) return "config_infra";
   return "general";
+}
+
+function inferTextSignals(text: string): TaskClassification["signals"] {
+  const signals = new Set<TaskClassification["signals"][number]>();
+  if (/\b(auth|authentication|autenticação)\b/i.test(text)) signals.add("auth");
+  if (/\b(authorization|permission|autorização|permissão)\b/i.test(text)) signals.add("authorization");
+  if (/\b(credential|secret|credencial|segredo)\b/i.test(text)) signals.add("credentials");
+  if (/\b(public contract|public api|contrato público|api pública)\b/i.test(text)) signals.add("public_contract");
+  if (/\b(migration|migração)\b/i.test(text)) signals.add("migration");
+  return [...signals];
 }
 
 function inferPathSignals(paths: readonly string[]): TaskClassification["signals"] {
@@ -56,18 +66,24 @@ function inferPathSignals(paths: readonly string[]): TaskClassification["signals
 export function classifyTask(rawInput: TaskInput): TaskClassification {
   const input = TaskInputSchema.parse(rawInput);
   const type = inferTaskType(input);
-  const signals = [...new Set([...input.signals, ...inferPathSignals(input.affectedPaths)])];
+  const pathSignals = inferPathSignals(input.affectedPaths);
+  const textSignals = inferTextSignals(`${input.title} ${input.description}`);
+  const signals = [...new Set([
+    ...input.signals,
+    ...pathSignals,
+    ...textSignals,
+  ])];
   const signalSet = new Set(signals);
+  const authoritativeSignalSet = new Set([...input.signals, ...pathSignals]);
   const rationale: string[] = [];
 
   let risk: TaskClassification["risk"] = "normal";
-  if (signalSet.has("credentials") || signalSet.has("destructive_migration")) {
+  if (authoritativeSignalSet.has("credentials") || authoritativeSignalSet.has("destructive_migration")) {
     risk = "critical";
     rationale.push("Credentials or destructive data change can have irreversible impact.");
   } else if (
     type === "security" ||
     type === "architecture" ||
-    type === "dependency" ||
     signals.some((signal) => ARCHITECTURE_SIGNALS.has(signal) || SECURITY_SIGNALS.has(signal))
   ) {
     risk = "high-risk";
@@ -80,7 +96,7 @@ export function classifyTask(rawInput: TaskInput): TaskClassification {
   }
 
   const architectRequired =
-    type === "architecture" || type === "dependency" || signals.some((signal) => ARCHITECTURE_SIGNALS.has(signal));
+    type === "architecture" || [...authoritativeSignalSet].some((signal) => ARCHITECTURE_SIGNALS.has(signal));
   const securityReviewRequired = type === "security" || signals.some((signal) => SECURITY_SIGNALS.has(signal));
 
   let tdd: TaskClassification["tdd"];
@@ -90,7 +106,7 @@ export function classifyTask(rawInput: TaskInput): TaskClassification {
     tdd = { expectation: "required", reason: "New business behavior should normally be specified with a failing test first." };
   } else if (type === "general") {
     tdd = { expectation: "recommended", reason: "Use TDD when the task introduces observable behavior; record the final disposition." };
-  } else if (type === "ui_style" || type === "config_infra") {
+  } else if (type === "ui_style" || type === "config_infra" || type === "dependency_change") {
     tdd = { expectation: "domain_verification", reason: "Use a domain-appropriate visual, configuration, or infrastructure proof instead of an artificial RED test." };
   } else if (type === "docs") {
     tdd = { expectation: "not_applicable", reason: "Documentation-only changes do not require TDD." };
@@ -107,9 +123,12 @@ export function classifyTask(rawInput: TaskInput): TaskClassification {
   if (securityReviewRequired) recommendedAgents.push("security-reviewer");
 
   return TaskClassificationSchema.parse({
+    taskId: input.taskId,
     type,
     risk,
     signals,
+    affectedPaths: input.affectedPaths,
+    targetScopes: input.targetScopes,
     rationale,
     tdd,
     recommendedAgents: [...new Set(recommendedAgents)],

@@ -1,6 +1,6 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; escopo v0.1
+- Status: base arquitetural aprovada; hardening v0.1.1
 - Atualização: 2026-09-26
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
@@ -39,7 +39,7 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.1
+### 2.2 Não objetivos da v0.1.1
 
 - Implementar o CLI completo ou publicar o pacote NPM.
 - Construir um plugin Codex completo.
@@ -216,7 +216,7 @@ Agents não contêm regras completas de stack, workflows inteiros nem comandos d
 
 Uma skill é um **procedimento reutilizável carregado sob demanda para um objetivo reconhecível**. Ela declara triggers e non-triggers, inputs, etapas, output, critérios de sucesso, limites de autoridade e referências progressivas.
 
-A arquitetura suporta inicialmente `plan-change`, `tdd-change`, `code-review`, `security-review` e `verification-dod`. A v0.1 implementa seus contratos e pontos de extensão, não precisa materializar todo o conteúdo.
+A arquitetura suporta inicialmente `plan-change`, `tdd-change`, `code-review`, `security-review` e `verification-dod`. A v0.1.1 implementa seus contratos e pontos de extensão, não precisa materializar todo o conteúdo.
 
 Skills não definem política global nem orquestram todo o ciclo. A descrição deve ser curta e precisa; referências detalhadas são carregadas somente quando necessárias.
 
@@ -234,7 +234,7 @@ O workflow padrão preserva todas as fases, mas a intensidade é proporcional. P
 
 ### 5.5 Verification
 
-Verification transforma afirmações em **evidência reproduzível**. Um verifier declara aplicação, executor, diretório, inputs, resultado esperado, timeout, severidade, evidence schema e remediação.
+Verification transforma afirmações em **evidência reproduzível**. Um verifier declara aplicação, target, scope, executor, diretório, inputs, resultado esperado, timeout, severidade, evidence schema e remediação. Em monorepos, cada target é resolvido a partir dos `affectedPaths` e de scopes estruturados adicionais quando uma raiz/shared afeta consumidores conhecidos; o mesmo `verifierId` pode produzir gates independentes para múltiplos packages sem acoplar o core aos seus nomes.
 
 Coverage é sinal auxiliar. Não há threshold universal. Os gates priorizam comportamento alterado, risco de regressão, regras de negócio e caminhos críticos.
 
@@ -244,7 +244,7 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.1 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.1.1 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
@@ -272,6 +272,8 @@ O resolver combina tipo da tarefa, paths afetados e sinais concretos. As classes
 
 Os nomes podem evoluir antes de estabilizar a API, mas não haverá um seletor manual equivalente a `light/standard/strict`. Todo passo obrigatório precisa reduzir um risco concreto e produzir evidência útil.
 
+Classificação estruturada fornecida pelo coding agent tem precedência. Heurísticas PT/EN complementam paths e discovery como sinais, sem se tornar um dicionário autoritativo. Uma alteração rotineira de dependência é `normal` por padrão; somente `structural_dependency` ou outro sinal arquitetural promove risco e aciona o architect.
+
 ### 5.10 Política de TDD
 
 TDD é decidido pelo tipo da mudança:
@@ -284,6 +286,8 @@ TDD é decidido pelo tipo da mudança:
 - documentação: TDD `not_applicable`.
 
 O relatório registra `applied`, `not_applicable` ou `waived`, sempre com motivo. Waiver é excepcional e explícito. O harness não exige commits intermediários para RED/GREEN.
+
+Quando TDD está `applied`, RED e GREEN referenciam evidence records reais da mesma task, do mesmo verifier e scope. RED deve ser uma execução `tdd-red` que falhou numa revisão anterior; GREEN deve ser uma execução `tdd-green` que passou na revisão final e ocorreu depois de RED.
 
 ## 6. Como evitar duplicação
 
@@ -308,7 +312,7 @@ Workflows e agents usam IDs, não inclusão textual. Arquivos como `.codex/agent
 | Implement | mudança mínima ligada ao aceite | sem expansão silenciosa |
 | Test | provas comportamentais ou justificativa de N/A | testes aplicáveis passam; RED/GREEN quando exigido |
 | Review | findings com evidência e disposição | nenhum bloqueante aberto |
-| Verify | gates resolvidos e executados | required verifiers passam ou têm waiver válido |
+| Verify | gates resolvidos e executados | required targets passam ou têm waiver válido para o mesmo scope |
 | Document | docs/ADR/changelog necessários | operação e comportamento não divergem |
 | Learn | zero ou mais candidates com proveniência | nenhuma promoção automática |
 | Done | relatório final e evidence bundle | DoD satisfeito para a revisão atual |
@@ -323,7 +327,7 @@ Estados de evidence:
 pass | fail | skipped | waived | not_applicable
 ```
 
-`skipped` não equivale a sucesso. `waived` exige waiver válido. `not_applicable` exige justificativa. Evidence records incluem verifier, scope, comando, tempos, exit code, subject revision/diff digest, output digest, sumário e motivo.
+`skipped` não equivale a sucesso. `waived` exige waiver válido para a mesma task, target e scope. `not_applicable` exige justificativa. Evidence records incluem task, verifier, phase, scope, comando, tempos, exit code, subject revision/diff digest, output digest, sumário e motivo.
 
 ### 7.3 Definition of Done
 
@@ -331,7 +335,7 @@ Uma task só alcança `Done` quando:
 
 - critérios de aceite estão ligados a implementação e evidência;
 - não há mudança fora de escopo sem explicação;
-- verifiers obrigatórios estão `pass`, `waived` ou `not_applicable` de forma válida;
+- targets obrigatórios estão `pass`, `waived` ou `not_applicable` de forma válida para a mesma task e scope;
 - skips, waivers e itens não aplicáveis são explícitos;
 - reviews obrigatórias não têm finding bloqueante aberto;
 - riscos de segurança e migrations foram tratados quando aplicáveis;
@@ -379,13 +383,13 @@ O Codex recebe sempre apenas identidade do projeto, limites de autoridade, coman
 
 Em monorepos, `AGENTS.md` aninhados só existem quando um subtree possui comandos ou regras realmente diferentes. Eles acrescentam contexto local em vez de repetir a raiz.
 
-### 9.3 Adapter Codex v0.1
+### 9.3 Adapter Codex v0.1.1
 
 O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.codex/agents/*.toml`. Os papéis usam sandbox read-only e não fixam modelo. A configuração é project-local. Plugin, hooks, MCP e mudanças globais ficam fora do MVP.
 
 ## 10. Estrutura de diretórios
 
-A v0.1 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.1.1 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -451,7 +455,7 @@ Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos projec
 - classificação de task/risco e resolução de gates;
 - evidence, waivers e cálculo de DoD;
 - materialização e limites do adapter Codex;
-- verifiers sem shell implícito;
+- verifiers sem shell implícito e resolução por affected scope;
 - vínculo de evidence à revisão/diff.
 
 ### 12.2 Fixtures
@@ -471,7 +475,7 @@ Skills terão casos positivos, negativos, indiretos, incompletos e adversariais.
 5. Perfis são de stack/capability; rigor deriva dinamicamente do risco.
 6. TDD é aplicado por tipo de mudança, sem RED ou commits artificiais.
 7. Coverage não possui threshold universal.
-8. Verification e evidence vinculada à revisão são primeira classe.
+8. Verification e evidence vinculadas à task, target, scope e revisão são primeira classe.
 9. Evidência detalhada é local e ignorada; o relatório final contém o resumo auditável.
 10. Done é um gate, não uma declaração narrativa.
 11. Quatro agents read-only formam o conjunto inicial; architect só atua em impacto real.
@@ -487,9 +491,9 @@ ADRs relacionados:
 - [ADR-0002 — Descoberta conservadora e precedência do projeto](decisions/0002-descoberta-e-precedencia-do-projeto.md)
 - [ADR-0003 — Entrega baseada em risco, evidência e governança](decisions/0003-entrega-baseada-em-risco-e-evidencia.md)
 
-## 14. Limite da fundação v0.1
+## 14. Limite da fundação v0.1.1
 
-A v0.1 implementa somente:
+A v0.1.1 mantém o escopo da fundação e adiciona somente hardening de contratos:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -501,5 +505,9 @@ A v0.1 implementa somente:
 - um ou dois verifiers determinísticos e avaliação de DoD;
 - contract tests;
 - fixture monorepo mínima e fixture single-repo mínima.
+- targets de verification por affected paths;
+- validação semântica das evidências RED/GREEN;
+- waivers vinculados a task, target e scope;
+- heurísticas PT/EN e distinção entre dependency change rotineira e estrutural.
 
 O trabalho deve parar após essa fundação estar verificada. CLI completo, plugin, hooks, MCP, catálogo de conteúdo, scaffold de projeto, runtime completo de aprendizado, auto-update, publicação NPM e integração em projetos reais pertencem a incrementos posteriores sujeitos a aprovação.

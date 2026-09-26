@@ -1,6 +1,10 @@
 {
   "name": "@fixture/api",
   "private": true,
+  "scripts": {
+    "test": "node -e \"console.log('api tests')\"",
+    "typecheck": "node -e \"process.exit(0)\""
+  },
   "dependencies": {
     "@nestjs/core": "11.0.0",
     "mongoose": "9.0.0",

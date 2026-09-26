@@ -1,6 +1,10 @@
 {
   "name": "@fixture/web",
   "private": true,
+  "scripts": {
+    "test": "node -e \"console.log('web tests')\"",
+    "build": "node -e \"process.exit(0)\""
+  },
   "dependencies": {
     "next": "16.0.0",
     "tailwindcss": "4.0.0",

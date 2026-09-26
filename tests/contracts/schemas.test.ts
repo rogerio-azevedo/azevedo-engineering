@@ -8,6 +8,7 @@ import {
   STACK_PROFILES,
   STANDARD_WORKFLOW,
   TddDecisionSchema,
+  WaiverSchema,
 } from "../../src/index.js";
 
 const revision = {
@@ -31,7 +32,9 @@ test("canonical component metadata is schema-validated", () => {
 test("evidence distinguishes skip, waiver, and not-applicable dispositions", () => {
   const base = {
     id: "evidence-1",
+    taskId: "task-contracts",
     verifierId: "verify.test",
+    phase: "verification",
     scope: ".",
     command: null,
     startedAt: "2026-09-26T12:00:00.000Z",
@@ -54,6 +57,8 @@ test("evidence distinguishes skip, waiver, and not-applicable dispositions", () 
 test("TDD decisions always record a disposition and reason", () => {
   assert.equal(
     TddDecisionSchema.parse({
+      taskId: "task-docs",
+      scope: ".",
       status: "not_applicable",
       expectation: "not_applicable",
       reason: "Documentation only.",
@@ -65,6 +70,8 @@ test("TDD decisions always record a disposition and reason", () => {
   );
   assert.throws(() =>
     TddDecisionSchema.parse({
+      taskId: "task-waiver",
+      scope: "apps/api",
       status: "waived",
       expectation: "required",
       reason: "Exceptional environment limitation.",
@@ -73,6 +80,19 @@ test("TDD decisions always record a disposition and reason", () => {
       waiverId: null,
     }),
   );
+});
+
+test("waivers require an explicit approver", () => {
+  assert.throws(() => WaiverSchema.parse({
+    id: "waiver-without-owner",
+    taskId: "task-waiver",
+    targetId: "verify.test::apps/api",
+    scope: "apps/api",
+    reason: "Environment unavailable.",
+    approvedBy: "",
+    createdAt: "2026-09-26T12:00:00.000Z",
+    expiresAt: null,
+  }));
 });
 
 test("the initial catalog stays intentionally small and has no rigor profiles", () => {

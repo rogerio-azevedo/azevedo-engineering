@@ -1,6 +1,6 @@
 {
   "name": "@azevedo/engineering",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Harness-agnostic engineering contracts for coding agents.",
   "type": "module",

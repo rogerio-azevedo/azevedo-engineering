@@ -9,12 +9,24 @@ function digest(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
-function evidenceId(verifierId: string, startedAt: string, outputDigest: string): string {
-  return createHash("sha256").update(`${verifierId}:${startedAt}:${outputDigest}`).digest("hex").slice(0, 16);
+function evidenceId(
+  verifierId: string,
+  startedAt: string,
+  outputDigest: string,
+  taskId: string,
+  scope: string,
+  phase: string,
+): string {
+  return createHash("sha256")
+    .update(`${taskId}:${verifierId}:${scope}:${phase}:${startedAt}:${outputDigest}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 export function runFilePresenceVerifier(input: {
+  taskId: string;
   root: string;
+  scope: string;
   requiredPaths: readonly string[];
   subjectRevision: SubjectRevision;
 }): EvidenceRecord {
@@ -34,10 +46,12 @@ export function runFilePresenceVerifier(input: {
   const outputDigest = digest(summary);
 
   return EvidenceRecordSchema.parse({
-    id: evidenceId("verify.files", startedAt, outputDigest),
+    id: evidenceId("verify.files", startedAt, outputDigest, input.taskId, input.scope, "verification"),
+    taskId: input.taskId,
     verifierId: "verify.files",
+    phase: "verification",
     status: missing.length === 0 && invalid.length === 0 ? "pass" : "fail",
-    scope: root,
+    scope: input.scope,
     command: null,
     startedAt,
     durationMs: Date.now() - started,
@@ -58,10 +72,13 @@ const PACKAGE_MANAGER_COMMANDS = {
 };
 
 export function runPackageScriptVerifier(input: {
+  taskId: string;
   root: string;
+  scope: string;
   packageManager: keyof typeof PACKAGE_MANAGER_COMMANDS;
   script: string;
   verifierId: "verify.lint" | "verify.typecheck" | "verify.test" | "verify.build";
+  phase?: "verification" | "tdd-red" | "tdd-green";
   subjectRevision: SubjectRevision;
   timeoutMs?: number;
 }): EvidenceRecord {
@@ -84,10 +101,12 @@ export function runPackageScriptVerifier(input: {
     : `${input.script} failed${result.error ? `: ${result.error.message}` : ` with exit code ${String(exitCode)}`}.`;
 
   return EvidenceRecordSchema.parse({
-    id: evidenceId(input.verifierId, startedAt, outputDigest),
+    id: evidenceId(input.verifierId, startedAt, outputDigest, input.taskId, input.scope, input.phase ?? "verification"),
+    taskId: input.taskId,
     verifierId: input.verifierId,
+    phase: input.phase ?? "verification",
     status: passed ? "pass" : "fail",
-    scope: resolve(input.root),
+    scope: input.scope,
     command: [executable, ...args],
     startedAt,
     durationMs: Date.now() - started,

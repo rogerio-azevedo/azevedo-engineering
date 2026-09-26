@@ -8,7 +8,7 @@ export const TaskTypeSchema = z.enum([
   "bugfix",
   "business_behavior",
   "architecture",
-  "dependency",
+  "dependency_change",
   "security",
   "general",
 ]);
@@ -24,6 +24,7 @@ export const RiskSignalSchema = z.enum([
   "migration",
   "public_contract",
   "new_dependency",
+  "structural_dependency",
   "new_boundary",
   "new_package",
   "new_app",
@@ -35,10 +36,12 @@ export const RiskSignalSchema = z.enum([
 ]);
 
 export const TaskInputSchema = z.object({
+  taskId: z.string().min(1),
   title: z.string().min(1),
   description: z.string().default(""),
   type: TaskTypeSchema.optional(),
   affectedPaths: z.array(z.string()).default([]),
+  targetScopes: z.array(z.string().min(1)).default([]),
   reproducibleBug: z.boolean().optional(),
   signals: z.array(RiskSignalSchema).default([]),
 });
@@ -46,9 +49,12 @@ export const TaskInputSchema = z.object({
 export type TaskInput = z.input<typeof TaskInputSchema>;
 
 export const TaskClassificationSchema = z.object({
+  taskId: z.string().min(1),
   type: TaskTypeSchema,
   risk: RiskClassSchema,
   signals: z.array(RiskSignalSchema),
+  affectedPaths: z.array(z.string()),
+  targetScopes: z.array(z.string().min(1)),
   rationale: z.array(z.string().min(1)),
   tdd: z.object({
     expectation: z.enum(["required", "recommended", "domain_verification", "not_applicable"]),

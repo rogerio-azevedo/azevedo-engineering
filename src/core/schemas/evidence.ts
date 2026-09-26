@@ -20,7 +20,9 @@ export type SubjectRevision = z.infer<typeof SubjectRevisionSchema>;
 export const EvidenceRecordSchema = z
   .object({
     id: z.string().min(1),
+    taskId: z.string().min(1),
     verifierId: ComponentIdSchema,
+    phase: z.enum(["verification", "tdd-red", "tdd-green", "review"]),
     status: EvidenceStatusSchema,
     scope: z.string().min(1),
     command: z.array(z.string()).nullable(),
@@ -54,6 +56,7 @@ export type EvidenceRecord = z.infer<typeof EvidenceRecordSchema>;
 
 export const FindingSchema = z.object({
   id: z.string().min(1),
+  taskId: z.string().min(1),
   kind: z.enum(["code", "security", "architecture"]),
   severity: z.enum(["critical", "high", "medium", "low"]),
   confidence: z.number().min(0).max(1),
@@ -75,7 +78,8 @@ export type Finding = z.infer<typeof FindingSchema>;
 
 export const WaiverSchema = z.object({
   id: z.string().min(1),
-  targetId: ComponentIdSchema,
+  taskId: z.string().min(1),
+  targetId: z.string().min(1),
   reason: z.string().min(1),
   approvedBy: z.string().min(1),
   scope: z.string().min(1),
@@ -87,6 +91,8 @@ export type Waiver = z.infer<typeof WaiverSchema>;
 
 export const TddDecisionSchema = z
   .object({
+    taskId: z.string().min(1),
+    scope: z.string().min(1),
     status: z.enum(["applied", "not_applicable", "waived"]),
     expectation: z.enum(["required", "recommended", "domain_verification", "not_applicable"]),
     reason: z.string().min(1),
@@ -101,12 +107,8 @@ export const TddDecisionSchema = z
     if (decision.status === "not_applicable" && decision.expectation === "required") {
       context.addIssue({ code: "custom", path: ["status"], message: "Required TDD must be applied or explicitly waived." });
     }
-    if (
-      decision.status === "applied" &&
-      decision.expectation === "required" &&
-      (!decision.redEvidenceId || !decision.greenEvidenceId)
-    ) {
-      context.addIssue({ code: "custom", path: ["redEvidenceId"], message: "Applied required TDD needs RED and GREEN evidence." });
+    if (decision.status === "applied" && (!decision.redEvidenceId || !decision.greenEvidenceId)) {
+      context.addIssue({ code: "custom", path: ["redEvidenceId"], message: "Applied TDD needs RED and GREEN evidence." });
     }
   });
 

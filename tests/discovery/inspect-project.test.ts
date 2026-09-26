@@ -56,3 +56,24 @@ test("conflicting package manager evidence is reported as ambiguous", () => {
   assert.ok(result.ambiguities.includes("package-manager"));
   assert.equal(result.conflicts.length, 1);
 });
+
+test("missing deterministic evidence remains unknown", () => {
+  const root = mkdtempSync(join(tmpdir(), "azevedo-unknown-"));
+  const result = inspectProject(root);
+
+  assert.equal(result.packageManager.state, "unknown");
+  assert.equal(result.topology.state, "unknown");
+  assert.ok(result.unknowns.includes("package-manager"));
+  assert.ok(result.unknowns.includes("repository-topology"));
+});
+
+test("turbo.json alone does not turn a package into a monorepo", () => {
+  const root = mkdtempSync(join(tmpdir(), "azevedo-turbo-single-"));
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "turbo-single" }));
+  writeFileSync(join(root, "turbo.json"), JSON.stringify({ tasks: {} }));
+
+  const result = inspectProject(root);
+  assert.equal(result.topology.state, "detected");
+  assert.equal(result.topology.value, "single-repo");
+  assert.deepEqual(result.topology.evidence, ["package.json"]);
+});
