@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/contracts",
+  "private": true,
+  "dependencies": {
+    "zod": "4.0.0"
+  }
+}

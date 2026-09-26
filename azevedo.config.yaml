@@ -1,0 +1,12 @@
+version: 1
+reference_manifest: azevedo-reference
+state_directory: .azevedo
+discovery:
+  mode: conservative
+  existing_project_precedence: true
+evidence:
+  directory: .azevedo/evidence
+  commit: false
+adapters:
+  - codex
+

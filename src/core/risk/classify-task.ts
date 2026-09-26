@@ -1,0 +1,120 @@
+import type { TaskClassification, TaskInput } from "../schemas/task.js";
+import { TaskClassificationSchema, TaskInputSchema } from "../schemas/task.js";
+
+const ARCHITECTURE_SIGNALS = new Set([
+  "new_dependency",
+  "new_boundary",
+  "new_package",
+  "new_app",
+  "integration",
+  "persistence",
+  "public_contract",
+  "auth",
+]);
+
+const SECURITY_SIGNALS = new Set([
+  "auth",
+  "authorization",
+  "credentials",
+  "pii",
+  "destructive_migration",
+  "migration",
+  "public_contract",
+  "integration",
+  "filesystem",
+  "process_execution",
+]);
+
+function inferTaskType(input: ReturnType<typeof TaskInputSchema.parse>): TaskClassification["type"] {
+  if (input.type) return input.type;
+  const paths = input.affectedPaths.map((path) => path.toLowerCase());
+  const text = `${input.title} ${input.description}`.toLowerCase();
+
+  if (paths.length > 0 && paths.every((path) => /(^|\/)(docs?\/|readme)|\.mdx?$/.test(path))) return "docs";
+  if (paths.length > 0 && paths.every((path) => /\.(css|scss|sass|less)$/.test(path))) return "ui_style";
+  if (/\b(auth|authorization|permission|credential|secret|security)\b/.test(text)) return "security";
+  if (/\b(architecture|boundary|new package|new app|integration strategy)\b/.test(text)) return "architecture";
+  if (/\b(dependency|upgrade package|add package)\b/.test(text)) return "dependency";
+  if (input.reproducibleBug || /\b(bug|regression|fix|defect)\b/.test(text)) return "bugfix";
+  if (/\b(refactor|rename|restructure|cleanup)\b/.test(text)) return "refactor";
+  if (/\b(feature|behavior|behaviour|business rule|regra de negócio|comportamento)\b/.test(text)) return "business_behavior";
+  if (paths.some((path) => /(^|\/)(infra|config|deploy|terraform|\.github)(\/|$)/.test(path))) return "config_infra";
+  return "general";
+}
+
+function inferPathSignals(paths: readonly string[]): TaskClassification["signals"] {
+  const signals = new Set<TaskClassification["signals"][number]>();
+  for (const rawPath of paths) {
+    const path = rawPath.toLowerCase();
+    if (/(^|\/)(auth|authentication|authorization|permissions?)(\/|\.|$)/.test(path)) signals.add("auth");
+    if (/(^|\/)(migrations?|prisma\/migrations|drizzle)(\/|\.|$)/.test(path)) signals.add("migration");
+    if (/(^|\/)(contracts?|openapi|public-api)(\/|\.|$)/.test(path)) signals.add("public_contract");
+  }
+  return [...signals];
+}
+
+export function classifyTask(rawInput: TaskInput): TaskClassification {
+  const input = TaskInputSchema.parse(rawInput);
+  const type = inferTaskType(input);
+  const signals = [...new Set([...input.signals, ...inferPathSignals(input.affectedPaths)])];
+  const signalSet = new Set(signals);
+  const rationale: string[] = [];
+
+  let risk: TaskClassification["risk"] = "normal";
+  if (signalSet.has("credentials") || signalSet.has("destructive_migration")) {
+    risk = "critical";
+    rationale.push("Credentials or destructive data change can have irreversible impact.");
+  } else if (
+    type === "security" ||
+    type === "architecture" ||
+    type === "dependency" ||
+    signals.some((signal) => ARCHITECTURE_SIGNALS.has(signal) || SECURITY_SIGNALS.has(signal))
+  ) {
+    risk = "high-risk";
+    rationale.push("The change crosses an architectural, security, data, or external contract boundary.");
+  } else if (type === "docs" && signals.length === 0) {
+    risk = "trivial";
+    rationale.push("The change is limited to documentation and has no detected behavior risk.");
+  } else {
+    rationale.push("The change has ordinary product risk with no high-impact signal detected.");
+  }
+
+  const architectRequired =
+    type === "architecture" || type === "dependency" || signals.some((signal) => ARCHITECTURE_SIGNALS.has(signal));
+  const securityReviewRequired = type === "security" || signals.some((signal) => SECURITY_SIGNALS.has(signal));
+
+  let tdd: TaskClassification["tdd"];
+  if (type === "bugfix" && input.reproducibleBug) {
+    tdd = { expectation: "required", reason: "A reproducible bug should be demonstrated by a failing regression test before the fix when technically reasonable." };
+  } else if (type === "business_behavior") {
+    tdd = { expectation: "required", reason: "New business behavior should normally be specified with a failing test first." };
+  } else if (type === "general") {
+    tdd = { expectation: "recommended", reason: "Use TDD when the task introduces observable behavior; record the final disposition." };
+  } else if (type === "ui_style" || type === "config_infra") {
+    tdd = { expectation: "domain_verification", reason: "Use a domain-appropriate visual, configuration, or infrastructure proof instead of an artificial RED test." };
+  } else if (type === "docs") {
+    tdd = { expectation: "not_applicable", reason: "Documentation-only changes do not require TDD." };
+  } else if (type === "refactor") {
+    tdd = { expectation: "not_applicable", reason: "A refactor preserves behavior; prove it with existing tests and add tests only for relevant gaps." };
+  } else {
+    tdd = { expectation: "recommended", reason: "Apply TDD when the concrete change adds behavior; do not create an artificial RED phase." };
+  }
+
+  const recommendedAgents: TaskClassification["recommendedAgents"] = [];
+  if (risk === "high-risk" || risk === "critical") recommendedAgents.push("explorer");
+  if (architectRequired) recommendedAgents.push("architect");
+  if (risk !== "trivial") recommendedAgents.push("reviewer");
+  if (securityReviewRequired) recommendedAgents.push("security-reviewer");
+
+  return TaskClassificationSchema.parse({
+    type,
+    risk,
+    signals,
+    rationale,
+    tdd,
+    recommendedAgents: [...new Set(recommendedAgents)],
+    architectRequired,
+    securityReviewRequired,
+  });
+}
+

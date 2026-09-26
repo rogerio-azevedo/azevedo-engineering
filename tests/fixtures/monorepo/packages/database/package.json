@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/database",
+  "private": true,
+  "dependencies": {
+    "drizzle-orm": "0.44.0",
+    "pg": "8.0.0"
+  }
+}

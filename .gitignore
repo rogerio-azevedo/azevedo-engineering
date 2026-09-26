@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.azevedo/evidence/
+.azevedo/candidates/
+.DS_Store
+

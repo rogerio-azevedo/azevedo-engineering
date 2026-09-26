@@ -1,0 +1,16 @@
+{
+  "name": "azevedo-reference-fixture",
+  "private": true,
+  "packageManager": "pnpm@11.24.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "lint": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\"",
+    "test": "node -e \"process.exit(0)\"",
+    "build": "node -e \"process.exit(0)\""
+  },
+  "devDependencies": {
+    "turbo": "2.0.0",
+    "typescript": "5.9.3"
+  }
+}
