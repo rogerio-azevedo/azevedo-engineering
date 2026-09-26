@@ -327,7 +327,7 @@ Estados de evidence:
 pass | fail | skipped | waived | not_applicable
 ```
 
-`skipped` não equivale a sucesso. `waived` exige waiver válido para a mesma task, target e scope. `not_applicable` exige justificativa. Evidence records incluem task, verifier, phase, scope, comando, tempos, exit code, subject revision/diff digest, output digest, sumário e motivo.
+`skipped` não equivale a sucesso. `waived` exige waiver válido para a mesma task, target e scope. `not_applicable` exige justificativa e não satisfaz um target já classificado como obrigatório; a aplicabilidade deve ser resolvida antes de o target entrar no gate de `Done`. Evidence records incluem task, verifier, phase, scope, comando, tempos, exit code, subject revision/diff digest, output digest, sumário e motivo.
 
 ### 7.3 Definition of Done
 
@@ -335,7 +335,7 @@ Uma task só alcança `Done` quando:
 
 - critérios de aceite estão ligados a implementação e evidência;
 - não há mudança fora de escopo sem explicação;
-- targets obrigatórios estão `pass`, `waived` ou `not_applicable` de forma válida para a mesma task e scope;
+- targets obrigatórios estão `pass` ou `waived` de forma válida para a mesma task e scope;
 - skips, waivers e itens não aplicáveis são explícitos;
 - reviews obrigatórias não têm finding bloqueante aberto;
 - riscos de segurança e migrations foram tratados quando aplicáveis;

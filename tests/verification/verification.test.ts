@@ -336,6 +336,50 @@ test("skipped evidence cannot satisfy a required target", () => {
   assert.ok(result.reasons.includes("Required target verify.test::. is skipped."));
 });
 
+test("not_applicable evidence cannot satisfy a required target", () => {
+  const current = captureSubjectRevision(fixture);
+  const evidence = EvidenceRecordSchema.parse({
+    id: "not-applicable-test-evidence",
+    taskId: "task-not-applicable-gate",
+    verifierId: "verify.test",
+    phase: "verification",
+    status: "not_applicable",
+    scope: ".",
+    command: null,
+    startedAt: "2026-09-26T12:00:00.000Z",
+    durationMs: 0,
+    exitCode: null,
+    subjectRevision: current,
+    outputDigest: `sha256:${"7".repeat(64)}`,
+    summary: "Declared not applicable.",
+    reason: "No test command was selected.",
+    waiverId: null,
+  });
+  const decision = TddDecisionSchema.parse({
+    taskId: "task-not-applicable-gate",
+    scope: ".",
+    status: "not_applicable",
+    expectation: "not_applicable",
+    reason: "No new behavior.",
+    redEvidenceId: null,
+    greenEvidenceId: null,
+    waiverId: null,
+  });
+  const result = evaluateDefinitionOfDone({
+    taskId: "task-not-applicable-gate",
+    requiredTargets: [{ verifierId: "verify.test", scope: "." }],
+    evidence: [evidence],
+    findings: [],
+    waivers: [],
+    acceptanceCriteria: [],
+    tddDecision: decision,
+    subjectRevision: current,
+  });
+
+  assert.equal(result.ready, false);
+  assert.ok(result.reasons.includes("Required target verify.test::. is not_applicable."));
+});
+
 test("TDD cannot be satisfied by arbitrary RED and GREEN ids", () => {
   const current = captureSubjectRevision(fixture);
   const decision = TddDecisionSchema.parse({

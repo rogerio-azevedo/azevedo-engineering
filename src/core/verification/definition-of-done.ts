@@ -32,7 +32,11 @@ function validateEvidenceDisposition(
   waivers: readonly Waiver[],
   now: Date,
 ): string | null {
-  if (record.status === "fail" || record.status === "skipped") return `is ${record.status}`;
+  if (
+    record.status === "fail" ||
+    record.status === "skipped" ||
+    record.status === "not_applicable"
+  ) return `is ${record.status}`;
   if (record.status === "waived") {
     const waiver = waivers.find((candidate) => candidate.id === record.waiverId);
     if (!waiver || !waiverIsValid(waiver, {
