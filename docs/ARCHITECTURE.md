@@ -1,6 +1,6 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Project Group Inspection v0.2.1
+- Status: base arquitetural aprovada; Safe Project Initialization v0.3
 - Atualização: 2026-09-26
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
@@ -39,9 +39,9 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.2.1
+### 2.2 Não objetivos da v0.3
 
-- Implementar comandos além de `inspect` ou publicar o pacote NPM.
+- Implementar comandos além de `inspect` e `init` ou publicar o pacote NPM.
 - Construir um plugin Codex completo.
 - Implementar hooks, MCP, auto-update ou runtime completo de continuous learning.
 - Criar um catálogo amplo de agents, skills e rules.
@@ -244,7 +244,7 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.2.1 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.3 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
@@ -265,7 +265,23 @@ Perfis descrevem stack/capability, não rigor. Os perfis iniciais previstos são
 
 O manifest Azevedo compõe esses perfis como arquitetura de referência. Um projeto só ativa os componentes compatíveis com sua inspeção ou overrides explícitos.
 
-### 5.9 Classificação de tarefa e risco
+### 5.9 Initialization e ownership
+
+`init` é a primeira operação mutável e sempre reutiliza `InspectionTargetResult`. Um target project com topologia unknown é bloqueado. Um project group gera planos independentes para todos os filhos, sem criar configuração na raiz agregadora.
+
+O fluxo é obrigatório e separa leitura de mutação:
+
+```text
+Inspection → Initialization Planning → Conflict Validation → Application
+```
+
+`buildInitPlan()` é read-only: classifica cada artefato como `create`, `unchanged` ou `conflict`, valida containment e reúne todos os projetos antes da primeira escrita. `applyInitPlan()` só aceita plano não bloqueado, repete o preflight global e cria exclusivamente arquivos ausentes. Conteúdo diferente, symlink ou tipo incompatível bloqueia toda a operação. Dry-run termina antes da aplicação.
+
+`azevedo.config.yaml` e `.azevedo/README.md` são Azevedo-managed. `AGENTS.md` é adapter-managed e recebe a mesma política conservadora. Init não é update: nem mesmo um arquivo gerenciado é migrado ou sobrescrito. Escritas usam criação exclusiva, mas rollback completo após falha de I/O durante aplicação permanece fora da v0.3.
+
+O core recebe artefatos de adapter sem depender estruturalmente de Codex. Na v0.3, o adapter Codex fornece somente o bootstrap `AGENTS.md`; config declara `engineering.adapter: codex` como intenção, enquanto stack e package manager continuam vindos de discovery.
+
+### 5.10 Classificação de tarefa e risco
 
 O resolver combina tipo da tarefa, paths afetados e sinais concretos. As classes conceituais iniciais são:
 
@@ -278,7 +294,7 @@ Os nomes podem evoluir antes de estabilizar a API, mas não haverá um seletor m
 
 Classificação estruturada fornecida pelo coding agent tem precedência. Heurísticas PT/EN complementam paths e discovery como sinais, sem se tornar um dicionário autoritativo. Uma alteração rotineira de dependência é `normal` por padrão; somente `structural_dependency` ou outro sinal arquitetural promove risco e aciona o architect.
 
-### 5.10 Política de TDD
+### 5.11 Política de TDD
 
 TDD é decidido pelo tipo da mudança:
 
@@ -393,7 +409,7 @@ O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.cod
 
 ## 10. Estrutura de diretórios
 
-A v0.2.1 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.3 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -405,20 +421,22 @@ azevedo-engineering/
 │   │   ├── schemas/               # metamodelo e contratos públicos
 │   │   ├── discovery/             # inspection read-only
 │   │   ├── inspection/            # contrato canônico do resultado público
+│   │   ├── initialization/         # artifacts, planning, apply e report
 │   │   ├── profiles/              # stack profiles/reference manifest
 │   │   ├── risk/                  # task/risk classification
 │   │   ├── agents/                # papéis canônicos
 │   │   ├── workflows/             # workflow padrão
 │   │   └── verification/          # planning, executors e DoD
 │   ├── adapters/
-│   │   └── codex/                 # materialização Codex mínima
-│   ├── cli/                        # parsing e human renderer
+│   │   └── codex/                 # bootstrap Codex e materialização mínima
+│   ├── cli/                        # parsing e renderers
 │   ├── cli.ts                      # executable azevedo
 │   └── index.ts
 ├── tests/
 │   ├── cli/
 │   ├── contracts/
 │   ├── discovery/
+│   ├── initialization/
 │   ├── risk/
 │   ├── verification/
 │   ├── adapters/
@@ -434,18 +452,19 @@ No futuro, `schemas`, `runtime` e `cli` podem virar packages independentes sem a
 
 ## 11. Distribuição por CLI/NPM
 
-O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.2.1 ainda não é publicada e não há mutação por `postinstall`.
+O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.3 ainda não é publicada e não há mutação por `postinstall`.
 
 Superfície atual:
 
 ```text
 npx @azevedo/engineering inspect
+npx @azevedo/engineering init --dry-run
+npx @azevedo/engineering init
 ```
 
 Comandos futuros, ainda não implementados:
 
 ```text
-npx @azevedo/engineering init
 npx @azevedo/engineering plan --target codex
 npx @azevedo/engineering apply --target codex
 npx @azevedo/engineering diff
@@ -453,7 +472,7 @@ npx @azevedo/engineering verify
 npx @azevedo/engineering doctor
 ```
 
-`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, verifiers recomendados, unknowns, conflitos e ambiguidades. `init` materializa apenas componentes compatíveis com a descoberta e overrides confirmados.
+`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, unknowns, conflitos e ambiguidades. `init` planeja antes de escrever e materializa somente config mínima, bootstrap Codex e README local quando não há conflitos.
 
 `.azevedo/state.json` futuramente registrará versão, resolução, arquivos/blocos gerenciados, hashes e overrides. Arquivos modificados pelo usuário serão preservados e reportados. Configuração global será sempre opt-in.
 
@@ -470,6 +489,7 @@ Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos projec
 - materialização e limites do adapter Codex;
 - verifiers sem shell implícito e resolução por affected scope;
 - vínculo de evidence à revisão/diff.
+- initialization planning puro, conflitos, idempotência, containment e atomicidade lógica de groups.
 
 ### 12.2 Fixtures
 
@@ -504,10 +524,11 @@ ADRs relacionados:
 - [ADR-0002 — Descoberta conservadora e precedência do projeto](decisions/0002-descoberta-e-precedencia-do-projeto.md)
 - [ADR-0003 — Entrega baseada em risco, evidência e governança](decisions/0003-entrega-baseada-em-risco-e-evidencia.md)
 - [ADR-0004 — Project groups não são monorepos](decisions/0004-project-groups-nao-sao-monorepos.md)
+- [ADR-0005 — Initialization and File Ownership](decisions/0005-initialization-and-file-ownership.md)
 
-## 14. Limite da v0.2.1
+## 14. Limite da v0.3
 
-A v0.2.1 preserva a foundation e o Inspect CLI e adiciona somente project-group inspection read-only:
+A v0.3 preserva inspection e adiciona somente initialization segura:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -530,5 +551,10 @@ A v0.2.1 preserva a foundation e o Inspect CLI e adiciona somente project-group 
 - união canônica `project | project-group` acima de `ProjectInspection`;
 - busca rasa e conservadora por projetos independentes em filhos diretos;
 - preservação integral das inspections individuais, inclusive package managers distintos.
+- `init [path]`, `--dry-run` e `--json`;
+- plano explícito separado da aplicação;
+- config mínima, bootstrap Codex e `.azevedo/README.md`;
+- ownership, conflitos, idempotência, symlink safety e path containment;
+- preflight global para atomicidade lógica de project groups.
 
-O trabalho deve parar após Project Group Inspection estar verificado. `init`, busca recursiva, demais comandos, plugin, hooks, MCP, catálogo de conteúdo, scaffold de projeto, runtime completo de aprendizado, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.
+O trabalho deve parar após Safe Project Initialization estar verificado. Update, rollback transacional, `--force`, prompts interativos, busca recursiva, demais comandos, outros adapters, plugin, hooks, MCP, catálogo de conteúdo, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.

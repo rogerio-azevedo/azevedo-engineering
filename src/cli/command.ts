@@ -1,7 +1,13 @@
 import { constants, accessSync, realpathSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { createCodexInitializationArtifacts } from "../adapters/codex/create-init-artifacts.js";
+import { createCoreInitializationArtifacts } from "../core/initialization/artifacts.js";
+import { applyInitPlan } from "../core/initialization/init-apply.js";
+import { buildInitPlan } from "../core/initialization/init-plan.js";
+import { createInitReport } from "../core/initialization/init-report.js";
 import { createInspectResult } from "../core/inspection/inspect-result.js";
 import { renderHumanInspection } from "./render-inspection.js";
+import { renderHumanInitialization } from "./render-initialization.js";
 
 export const EXIT_SUCCESS = 0;
 export const EXIT_OPERATIONAL_ERROR = 1;
@@ -28,9 +34,11 @@ class CliError extends Error {
 
 const GENERAL_HELP = `Usage:
   azevedo inspect [path] [--json]
+  azevedo init [path] [--dry-run] [--json]
 
 Commands:
   inspect    Inspect a project without modifying it
+  init       Safely initialize Azevedo Engineering in a recognized project
 
 Options:
   --help     Show help
@@ -48,10 +56,26 @@ Options:
   --help     Show help
 `;
 
+const INIT_HELP = `Usage:
+  azevedo init [path] [--dry-run] [--json]
+
+Arguments:
+  path       Project or project-group directory (default: current directory)
+
+Options:
+  --dry-run  Plan and validate without writing files
+  --json     Output machine-readable JSON
+  --help     Show help
+`;
+
 type InspectArguments = {
   help: boolean;
   json: boolean;
   path: string;
+};
+
+type InitArguments = InspectArguments & {
+  dryRun: boolean;
 };
 
 function parseInspectArguments(args: readonly string[]): InspectArguments {
@@ -74,6 +98,24 @@ function parseInspectArguments(args: readonly string[]): InspectArguments {
   }
 
   return { help, json, path: projectPath ?? "." };
+}
+
+function parseInitArguments(args: readonly string[]): InitArguments {
+  let help = false;
+  let json = false;
+  let dryRun = false;
+  let projectPath: string | undefined;
+
+  for (const argument of args) {
+    if (argument === "--help" || argument === "-h") help = true;
+    else if (argument === "--json") json = true;
+    else if (argument === "--dry-run") dryRun = true;
+    else if (argument.startsWith("-")) throw new CliError(`Unknown option: ${argument}`, EXIT_INVALID_USAGE);
+    else if (projectPath !== undefined) throw new CliError(`Unexpected argument: ${argument}`, EXIT_INVALID_USAGE);
+    else projectPath = argument;
+  }
+
+  return { help, json, dryRun, path: projectPath ?? "." };
 }
 
 function describeError(error: unknown): string {
@@ -127,28 +169,53 @@ export function runCli(
       return EXIT_SUCCESS;
     }
 
-    if (command !== "inspect") {
+    if (command !== "inspect" && command !== "init") {
       throw new CliError(`Unknown command: ${command}`, EXIT_INVALID_USAGE);
     }
 
-    const inspectArguments = parseInspectArguments(commandArguments);
-    if (inspectArguments.help) {
-      io.stdout(INSPECT_HELP);
+    if (command === "inspect") {
+      const inspectArguments = parseInspectArguments(commandArguments);
+      if (inspectArguments.help) {
+        io.stdout(INSPECT_HELP);
+        return EXIT_SUCCESS;
+      }
+
+      const root = resolveProjectRoot(inspectArguments.path, options.cwd);
+      let result;
+      try {
+        result = createInspectResult(root);
+      } catch (error) {
+        throw new CliError(`Inspection failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+      }
+
+      io.stdout(inspectArguments.json
+        ? `${JSON.stringify(result, null, 2)}\n`
+        : renderHumanInspection(result));
       return EXIT_SUCCESS;
     }
 
-    const root = resolveProjectRoot(inspectArguments.path, options.cwd);
-    let result;
-    try {
-      result = createInspectResult(root);
-    } catch (error) {
-      throw new CliError(`Inspection failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+    const initArguments = parseInitArguments(commandArguments);
+    if (initArguments.help) {
+      io.stdout(INIT_HELP);
+      return EXIT_SUCCESS;
     }
-
-    io.stdout(inspectArguments.json
-      ? `${JSON.stringify(result, null, 2)}\n`
-      : renderHumanInspection(result));
-    return EXIT_SUCCESS;
+    const root = resolveProjectRoot(initArguments.path, options.cwd);
+    try {
+      const inspection = createInspectResult(root);
+      const artifacts = [
+        ...createCoreInitializationArtifacts("codex"),
+        ...createCodexInitializationArtifacts(),
+      ];
+      const plan = buildInitPlan(inspection, artifacts);
+      if (!initArguments.dryRun && !plan.blocked) applyInitPlan(plan);
+      const report = createInitReport(plan, initArguments.dryRun);
+      io.stdout(initArguments.json
+        ? `${JSON.stringify(report, null, 2)}\n`
+        : renderHumanInitialization(report));
+      return report.blocked ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
+    } catch (error) {
+      throw new CliError(`Initialization failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+    }
   } catch (error) {
     const cliError = error instanceof CliError
       ? error

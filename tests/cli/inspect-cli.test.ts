@@ -279,14 +279,14 @@ test("a project manifest that cannot be read as valid JSON becomes a clear opera
 
 test("invalid arguments use the usage exit code and stderr", () => {
   const execution = runCli("inspect", singleRepo, "--unknown");
-  const unavailableCommand = runCli("init");
+  const unavailableCommand = runCli("doctor");
 
   assert.equal(execution.status, 2);
   assert.equal(execution.stdout, "");
   assert.match(execution.stderr, /Unknown option/);
   assert.match(execution.stderr, /--help/);
   assert.equal(unavailableCommand.status, 2);
-  assert.match(unavailableCommand.stderr, /Unknown command: init/);
+  assert.match(unavailableCommand.stderr, /Unknown command: doctor/);
 });
 
 test("inspect is read-only for the target project", () => {
@@ -321,7 +321,7 @@ test("help and version are available without inspecting a project", () => {
   assert.equal(inspectHelp.status, 0);
   assert.match(inspectHelp.stdout, /Project directory/);
   assert.equal(version.status, 0);
-  assert.equal(version.stdout, "0.2.1\n");
+  assert.equal(version.stdout, "0.3.0\n");
 
   const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
     bin: { azevedo: string };
