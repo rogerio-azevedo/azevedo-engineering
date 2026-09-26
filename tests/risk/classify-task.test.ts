@@ -45,4 +45,3 @@ test("destructive migrations are critical", () => {
   assert.equal(result.risk, "critical");
   assert.equal(result.tdd.expectation, "domain_verification");
 });
-

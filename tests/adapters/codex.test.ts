@@ -35,4 +35,3 @@ test("Codex baseline contains detected context rather than reference assumptions
   assert.match(baseline.content, /prisma/);
   assert.doesNotMatch(baseline.content, /drizzle/);
 });
-

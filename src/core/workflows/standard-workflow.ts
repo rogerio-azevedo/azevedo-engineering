@@ -16,4 +16,3 @@ export const STANDARD_WORKFLOW = {
     { id: "done", summary: "Evaluate completion.", output: "Final report", gate: "Definition of Done is satisfied for the current revision." },
   ],
 } as const satisfies Workflow;
-

@@ -29,4 +29,3 @@ Sinais insuficientes produzem `unknown`; sinais conflitantes produzem `ambiguous
 - Stack-specific rules só ativam por detecção ou configuração explícita.
 - `inspect` pode existir sem `init` e sem mutar o projeto.
 - Fixtures monorepo e single-repo são necessárias para provar ausência de pressupostos estruturais.
-

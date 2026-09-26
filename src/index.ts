@@ -13,4 +13,3 @@ export * from "./core/verification/subject-revision.js";
 export * from "./core/verification/verification-plan.js";
 export * from "./core/verification/verifiers.js";
 export * from "./core/workflows/standard-workflow.js";
-

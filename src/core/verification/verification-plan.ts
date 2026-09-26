@@ -74,4 +74,3 @@ export function resolveVerificationPlan(
 
   return plan.map((item) => VerificationPlanItemSchema.parse(item));
 }
-

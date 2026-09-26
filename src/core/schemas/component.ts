@@ -37,4 +37,3 @@ export const GeneratedArtifactSchema = z.object({
 });
 
 export type GeneratedArtifact = z.infer<typeof GeneratedArtifactSchema>;
-

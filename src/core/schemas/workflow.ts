@@ -28,4 +28,3 @@ export const WorkflowSchema = z.object({
 });
 
 export type Workflow = z.infer<typeof WorkflowSchema>;
-

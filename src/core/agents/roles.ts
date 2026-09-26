@@ -53,4 +53,3 @@ export const AGENT_ROLES = [
       "Inspect the changed trust boundaries and applicable stack. Prioritize concrete exploit or abuse paths, include negative authorization cases, and do not edit files.",
   },
 ] as const satisfies readonly AgentRole[];
-

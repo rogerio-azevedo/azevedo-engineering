@@ -60,4 +60,3 @@ export const TaskClassificationSchema = z.object({
 });
 
 export type TaskClassification = z.infer<typeof TaskClassificationSchema>;
-

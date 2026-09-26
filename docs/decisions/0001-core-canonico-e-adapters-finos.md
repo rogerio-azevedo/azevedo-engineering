@@ -29,4 +29,3 @@ A distribuição começa por pacote NPM e artefatos project-local. O adapter Cod
 - Adapters podem oferecer menos features sem alterar a semântica do DoD.
 - Artefatos específicos do harness são derivados e testáveis.
 - Uma nova integração exige adapter, não cópia do sistema.
-

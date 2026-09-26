@@ -117,4 +117,3 @@ export function classifyTask(rawInput: TaskInput): TaskClassification {
     securityReviewRequired,
   });
 }
-

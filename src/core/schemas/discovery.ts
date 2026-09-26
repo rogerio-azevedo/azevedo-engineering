@@ -71,4 +71,3 @@ export const ProjectInspectionSchema = z.object({
 
 export type ProjectInspection = z.infer<typeof ProjectInspectionSchema>;
 export type Capability = z.infer<typeof CapabilitySchema>;
-

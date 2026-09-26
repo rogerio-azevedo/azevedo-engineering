@@ -83,4 +83,3 @@ export function matchStackProfiles(technologyIds: ReadonlySet<string>): string[]
     profile.requiredTechnologies.every((technology) => technologyIds.has(technology)),
   ).map((profile) => profile.id);
 }
-
