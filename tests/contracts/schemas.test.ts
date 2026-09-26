@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import test from "node:test";
 import {
   AGENT_ROLES,
   AZEVEDO_REFERENCE_MANIFEST,
   ComponentSchema,
   EvidenceRecordSchema,
+  InspectionTargetResultSchema,
+  ProjectGroupInspectResultSchema,
   STACK_PROFILES,
   STANDARD_WORKFLOW,
   TddDecisionSchema,
   WaiverSchema,
+  createInspectResult,
 } from "../../src/index.js";
 
 const revision = {
@@ -120,4 +124,18 @@ test("the standard workflow preserves all delivery phases in order", () => {
     "learn",
     "done",
   ]);
+});
+
+test("inspection targets discriminate projects from project groups", () => {
+  const project = createInspectResult(resolve("tests/fixtures/single-repo"));
+  const group = createInspectResult(resolve("tests/fixtures/project-group"));
+
+  assert.equal(InspectionTargetResultSchema.parse(project).kind, "project");
+  assert.equal(InspectionTargetResultSchema.parse(group).kind, "project-group");
+  assert.throws(() => ProjectGroupInspectResultSchema.parse({
+    schemaVersion: 1,
+    kind: "project-group",
+    root: resolve("tests/fixtures/project-group"),
+    projects: [],
+  }));
 });

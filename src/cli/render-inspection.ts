@@ -1,11 +1,15 @@
-import type { InspectResult } from "../core/inspection/inspect-result.js";
+import type {
+  InspectionTargetResult,
+  ProjectGroupInspectResult,
+  ProjectInspectResult,
+} from "../core/inspection/inspect-result.js";
 
 function formatEvidence(evidence: readonly string[]): string {
   return evidence.length > 0 ? evidence.join(", ") : "none";
 }
 
 function renderDetection(
-  detection: InspectResult["packageManager"] | InspectResult["topology"],
+  detection: ProjectInspectResult["packageManager"] | ProjectInspectResult["topology"],
 ): string {
   if (detection.state === "detected") return detection.value ?? "unknown";
   if (detection.state === "ambiguous" && "candidates" in detection) {
@@ -18,7 +22,7 @@ function renderValues(values: readonly string[], indent = "  "): string[] {
   return values.length > 0 ? values.map((value) => `${indent}${value}`) : [`${indent}none`];
 }
 
-export function renderHumanInspection(result: InspectResult): string {
+function renderProjectInspection(result: ProjectInspectResult): string {
   const lines = [
     "Azevedo Engineering — Project Inspection",
     "",
@@ -78,4 +82,43 @@ export function renderHumanInspection(result: InspectResult): string {
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function renderProjectGroupInspection(result: ProjectGroupInspectResult): string {
+  const lines = [
+    "Azevedo Engineering — Project Group Inspection",
+    "",
+    "Group",
+    `  Root: ${result.root}`,
+    `  Projects: ${result.projects.length}`,
+    "",
+    "Projects",
+  ];
+
+  for (const project of result.projects) {
+    lines.push(
+      `  ${project.relativePath}`,
+      `    Path: ${project.relativePath}`,
+      `    Topology: ${renderDetection(project.inspection.topology)}`,
+      `    Package manager: ${renderDetection(project.inspection.packageManager)}`,
+      "    Technologies",
+      ...(
+        project.inspection.technologies.length > 0
+          ? project.inspection.technologies.map((technology) => `      [${technology.category}] ${technology.id}`)
+          : ["      none"]
+      ),
+      "    Capabilities",
+      ...project.inspection.capabilities.map((capability) => `      [${capability.state}] ${capability.id}`),
+      `    Unknown: ${project.inspection.unknowns.length > 0 ? project.inspection.unknowns.join(", ") : "none"}`,
+      `    Ambiguous: ${project.inspection.ambiguities.length > 0 ? project.inspection.ambiguities.join(", ") : "none"}`,
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+export function renderHumanInspection(result: InspectionTargetResult): string {
+  return result.kind === "project-group"
+    ? renderProjectGroupInspection(result)
+    : renderProjectInspection(result);
 }

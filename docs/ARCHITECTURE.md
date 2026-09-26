@@ -1,6 +1,6 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Inspect CLI v0.2
+- Status: base arquitetural aprovada; Project Group Inspection v0.2.1
 - Atualização: 2026-09-26
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
@@ -39,7 +39,7 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.2
+### 2.2 Não objetivos da v0.2.1
 
 - Implementar comandos além de `inspect` ou publicar o pacote NPM.
 - Construir um plugin Codex completo.
@@ -244,13 +244,15 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.2 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.2.1 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
 Inspection sempre precede `init`. A detecção usa apenas evidência determinística, como lockfiles, manifests, workspaces, dependências e scripts. Quando os sinais conflitam ou não são suficientes, o resultado é `ambiguous` ou `unknown`, nunca uma suposição silenciosa.
 
-Na v0.2, o CLI resolve o path real do projeto e delega a descoberta a `inspectProject()`. O contrato de máquina `InspectResult` reutiliza `ProjectInspection` e omite apenas `inspectedAt`, evitando timestamps voláteis. A renderização humana e o JSON derivam desse mesmo resultado; a inspection não executa comandos nem escreve no target.
+Na v0.2.1, o CLI resolve o path real e produz `InspectionTargetResult`, uma união explícita entre `ProjectInspectResult` e `ProjectGroupInspectResult`. O resultado de projeto reutiliza `ProjectInspection` e omite apenas `inspectedAt`, evitando timestamps voláteis. A renderização humana e o JSON derivam do mesmo contrato; a inspection não executa comandos nem escreve no target.
+
+Project group fica acima de `ProjectTopology`: não adiciona um valor à topologia e não transforma projetos independentes em monorepo. Se a raiz já é um projeto reconhecido, inclusive monorepo, ela permanece `kind: project` e nenhuma busca de filhos ocorre. Somente uma raiz com topologia desconhecida ativa uma busca rasa pelos diretórios filhos imediatos. Cada filho só entra no grupo quando a inspection existente o reconhece por evidência determinística, e mantém integralmente seu próprio package manager, topologia, stack, scripts, capabilities e evidências. Zero filhos preserva o resultado unknown da raiz; um ou mais filhos produzem `kind: project-group`.
 
 Perfis descrevem stack/capability, não rigor. Os perfis iniciais previstos são:
 
@@ -391,7 +393,7 @@ O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.cod
 
 ## 10. Estrutura de diretórios
 
-A v0.2 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.2.1 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -432,7 +434,7 @@ No futuro, `schemas`, `runtime` e `cli` podem virar packages independentes sem a
 
 ## 11. Distribuição por CLI/NPM
 
-O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.2 ainda não é publicada e não há mutação por `postinstall`.
+O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.2.1 ainda não é publicada e não há mutação por `postinstall`.
 
 Superfície atual:
 
@@ -501,10 +503,11 @@ ADRs relacionados:
 - [ADR-0001 — Core canônico e adapters finos](decisions/0001-core-canonico-e-adapters-finos.md)
 - [ADR-0002 — Descoberta conservadora e precedência do projeto](decisions/0002-descoberta-e-precedencia-do-projeto.md)
 - [ADR-0003 — Entrega baseada em risco, evidência e governança](decisions/0003-entrega-baseada-em-risco-e-evidencia.md)
+- [ADR-0004 — Project groups não são monorepos](decisions/0004-project-groups-nao-sao-monorepos.md)
 
-## 14. Limite da v0.2
+## 14. Limite da v0.2.1
 
-A v0.2 preserva a foundation v0.1.1 e adiciona somente a superfície read-only de inspection:
+A v0.2.1 preserva a foundation e o Inspect CLI e adiciona somente project-group inspection read-only:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -524,5 +527,8 @@ A v0.2 preserva a foundation v0.1.1 e adiciona somente a superfície read-only d
 - contrato canônico determinístico derivado de `ProjectInspection`;
 - human renderer, exit codes e tratamento de paths;
 - testes de integração do CLI e prova read-only.
+- união canônica `project | project-group` acima de `ProjectInspection`;
+- busca rasa e conservadora por projetos independentes em filhos diretos;
+- preservação integral das inspections individuais, inclusive package managers distintos.
 
-O trabalho deve parar após o Inspect CLI estar verificado. `init`, demais comandos, plugin, hooks, MCP, catálogo de conteúdo, scaffold de projeto, runtime completo de aprendizado, auto-update, publicação NPM e integração em projetos reais pertencem a incrementos posteriores sujeitos a aprovação.
+O trabalho deve parar após Project Group Inspection estar verificado. `init`, busca recursiva, demais comandos, plugin, hooks, MCP, catálogo de conteúdo, scaffold de projeto, runtime completo de aprendizado, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.

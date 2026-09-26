@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.2 adiciona o primeiro comando público: uma inspection conservadora de projetos existentes.
+Engineering harness reutilizável para coding agents. A v0.2.1 oferece inspection conservadora de projetos existentes e de diretórios agregadores com projetos independentes.
 
 ## Inspect
 
@@ -12,6 +12,10 @@ azevedo inspect ./project --json
 ```
 
 `inspect` é 100% read-only no projeto analisado. Ele não instala configuração do Azevedo Engineering, não cria arquivos e não executa scripts, testes, builds, linters ou migrations do target.
+
+O resultado possui `kind: "project"` para um projeto normal ou monorepo. Quando a raiz não é um projeto reconhecível, o CLI examina somente seus filhos diretos e pode retornar `kind: "project-group"`, preservando uma inspection completa para cada projeto encontrado. Project group descreve organização externa e não é uma nova topologia nem um monorepo implícito.
+
+A busca de grupos não é recursiva, ignora diretórios técnicos comuns e não usa nomes como `api`, `server` ou `web` como evidência. Uma raiz com projeto ou monorepo reconhecido nunca dispara essa busca. Um container com exatamente um projeto filho ainda é representado como project group.
 
 A saída humana apresenta o resultado para leitura no terminal. `--json` escreve somente o contrato canônico, determinístico e parseável no `stdout`; erros são enviados ao `stderr`.
 
