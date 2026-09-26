@@ -1,6 +1,7 @@
 export * from "./adapters/codex/create-install-plan.js";
 export * from "./core/agents/roles.js";
 export * from "./core/discovery/inspect-project.js";
+export * from "./core/inspection/inspect-result.js";
 export * from "./core/profiles/stack-profiles.js";
 export * from "./core/risk/classify-task.js";
 export * from "./core/schemas/component.js";

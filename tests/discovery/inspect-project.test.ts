@@ -31,6 +31,8 @@ test("existing single-repo architecture wins over Azevedo reference defaults", (
   assert.ok(technologies.has("prisma"));
   assert.ok(!technologies.has("drizzle"));
   assert.ok(!result.matchedProfiles.includes("profile.postgres-drizzle"));
+  assert.ok(result.unknowns.includes("lint-command"));
+  assert.ok(!result.unknowns.includes("test-command"));
 });
 
 test("single-repo inspection ignores nested fixture packages outside declared workspaces", () => {
@@ -65,6 +67,9 @@ test("missing deterministic evidence remains unknown", () => {
   assert.equal(result.topology.state, "unknown");
   assert.ok(result.unknowns.includes("package-manager"));
   assert.ok(result.unknowns.includes("repository-topology"));
+  for (const capability of ["lint", "typecheck", "test", "build"]) {
+    assert.ok(result.unknowns.includes(`${capability}-command`));
+  }
 });
 
 test("turbo.json alone does not turn a package into a monorepo", () => {

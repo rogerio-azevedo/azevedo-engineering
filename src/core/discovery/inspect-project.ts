@@ -42,15 +42,19 @@ function displayPath(root: string, path: string): string {
   return value === "" ? "." : value;
 }
 
-function readJsonObject(path: string): JsonObject | null {
+function readJsonObject(path: string): JsonObject {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as JsonObject)
-      : null;
-  } catch {
-    return null;
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read valid JSON from ${path}: ${reason}`);
   }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Expected a JSON object in ${path}.`);
+  }
+  return parsed as JsonObject;
 }
 
 function findPackageFiles(root: string, directory = root, depth = 0): string[] {
@@ -62,8 +66,9 @@ function findPackageFiles(root: string, directory = root, depth = 0): string[] {
   let entries;
   try {
     entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return results;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read directory ${displayPath(root, directory)}: ${reason}`);
   }
 
   for (const entry of entries) {
@@ -237,8 +242,8 @@ export function inspectProject(projectRoot: string): ProjectInspection {
 
   if (packageManager.state === "unknown") unknowns.push("package-manager");
   if (topology.state === "unknown") unknowns.push("repository-topology");
-  if (!capabilities.some((capability) => capability.id === "test" && capability.state === "detected")) {
-    unknowns.push("test-command");
+  for (const capability of capabilities) {
+    if (capability.state === "unknown") unknowns.push(`${capability.id}-command`);
   }
   if (packageManager.state === "ambiguous") {
     const message = `Conflicting package manager evidence: ${packageManager.candidates.join(", ")}`;

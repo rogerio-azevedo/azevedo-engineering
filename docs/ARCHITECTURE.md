@@ -1,6 +1,6 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; hardening v0.1.1
+- Status: base arquitetural aprovada; Inspect CLI v0.2
 - Atualização: 2026-09-26
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
@@ -19,7 +19,7 @@ O sistema separa quatro preocupações:
 
 - um **core canônico e independente de harness**, com contratos, políticas, workflows, classificação de risco, descoberta de projeto e verification;
 - **adapters finos**, que materializam apenas o necessário nas superfícies de Codex, Cursor e Claude Code;
-- um **runtime determinístico**, futuramente exposto por CLI/NPM, que inspeciona o projeto, resolve capacidades e gates e registra evidências;
+- um **runtime determinístico**, exposto inicialmente pelo Inspect CLI e futuramente ampliado via CLI/NPM, que inspeciona o projeto, resolve capacidades e gates e registra evidências;
 - **artefatos gerados**, que não são fonte de verdade e podem ser regenerados de forma controlada.
 
 O primeiro adapter é o Codex. A fundação não depende de recursos exclusivos dele. O Codex deve receber um `AGENTS.md` curto, papéis especializados somente quando úteis e contexto progressivo. Hooks, plugin, MCP e multi-agent são capacidades opcionais; nunca são a única forma de aplicar uma regra ou cumprir o Definition of Done.
@@ -39,9 +39,9 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.1.1
+### 2.2 Não objetivos da v0.2
 
-- Implementar o CLI completo ou publicar o pacote NPM.
+- Implementar comandos além de `inspect` ou publicar o pacote NPM.
 - Construir um plugin Codex completo.
 - Implementar hooks, MCP, auto-update ou runtime completo de continuous learning.
 - Criar um catálogo amplo de agents, skills e rules.
@@ -244,11 +244,13 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.1.1 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.2 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
 Inspection sempre precede `init`. A detecção usa apenas evidência determinística, como lockfiles, manifests, workspaces, dependências e scripts. Quando os sinais conflitam ou não são suficientes, o resultado é `ambiguous` ou `unknown`, nunca uma suposição silenciosa.
+
+Na v0.2, o CLI resolve o path real do projeto e delega a descoberta a `inspectProject()`. O contrato de máquina `InspectResult` reutiliza `ProjectInspection` e omite apenas `inspectedAt`, evitando timestamps voláteis. A renderização humana e o JSON derivam desse mesmo resultado; a inspection não executa comandos nem escreve no target.
 
 Perfis descrevem stack/capability, não rigor. Os perfis iniciais previstos são:
 
@@ -389,7 +391,7 @@ O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.cod
 
 ## 10. Estrutura de diretórios
 
-A v0.1.1 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.2 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -400,6 +402,7 @@ azevedo-engineering/
 │   ├── core/
 │   │   ├── schemas/               # metamodelo e contratos públicos
 │   │   ├── discovery/             # inspection read-only
+│   │   ├── inspection/            # contrato canônico do resultado público
 │   │   ├── profiles/              # stack profiles/reference manifest
 │   │   ├── risk/                  # task/risk classification
 │   │   ├── agents/                # papéis canônicos
@@ -407,8 +410,11 @@ azevedo-engineering/
 │   │   └── verification/          # planning, executors e DoD
 │   ├── adapters/
 │   │   └── codex/                 # materialização Codex mínima
+│   ├── cli/                        # parsing e human renderer
+│   ├── cli.ts                      # executable azevedo
 │   └── index.ts
 ├── tests/
+│   ├── cli/
 │   ├── contracts/
 │   ├── discovery/
 │   ├── risk/
@@ -424,14 +430,19 @@ azevedo-engineering/
 
 No futuro, `schemas`, `runtime` e `cli` podem virar packages independentes sem alterar os contratos. Um diretório de plugin só deverá existir quando houver implementação real do plugin.
 
-## 11. Distribuição futura por CLI/NPM
+## 11. Distribuição por CLI/NPM
 
-O pacote será `@azevedo/engineering`, com execução por `npx @azevedo/engineering`. Não haverá mutação por `postinstall`.
+O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.2 ainda não é publicada e não há mutação por `postinstall`.
 
-Fluxo futuro:
+Superfície atual:
 
 ```text
 npx @azevedo/engineering inspect
+```
+
+Comandos futuros, ainda não implementados:
+
+```text
 npx @azevedo/engineering init
 npx @azevedo/engineering plan --target codex
 npx @azevedo/engineering apply --target codex
@@ -491,9 +502,9 @@ ADRs relacionados:
 - [ADR-0002 — Descoberta conservadora e precedência do projeto](decisions/0002-descoberta-e-precedencia-do-projeto.md)
 - [ADR-0003 — Entrega baseada em risco, evidência e governança](decisions/0003-entrega-baseada-em-risco-e-evidencia.md)
 
-## 14. Limite da fundação v0.1.1
+## 14. Limite da v0.2
 
-A v0.1.1 mantém o escopo da fundação e adiciona somente hardening de contratos:
+A v0.2 preserva a foundation v0.1.1 e adiciona somente a superfície read-only de inspection:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -504,10 +515,14 @@ A v0.1.1 mantém o escopo da fundação e adiciona somente hardening de contrato
 - workflow padrão;
 - um ou dois verifiers determinísticos e avaliação de DoD;
 - contract tests;
-- fixture monorepo mínima e fixture single-repo mínima.
+- fixture monorepo mínima e fixture single-repo mínima;
 - targets de verification por affected paths;
 - validação semântica das evidências RED/GREEN;
 - waivers vinculados a task, target e scope;
 - heurísticas PT/EN e distinção entre dependency change rotineira e estrutural.
+- executable `azevedo` com `inspect [path] [--json]`, help e version;
+- contrato canônico determinístico derivado de `ProjectInspection`;
+- human renderer, exit codes e tratamento de paths;
+- testes de integração do CLI e prova read-only.
 
-O trabalho deve parar após essa fundação estar verificada. CLI completo, plugin, hooks, MCP, catálogo de conteúdo, scaffold de projeto, runtime completo de aprendizado, auto-update, publicação NPM e integração em projetos reais pertencem a incrementos posteriores sujeitos a aprovação.
+O trabalho deve parar após o Inspect CLI estar verificado. `init`, demais comandos, plugin, hooks, MCP, catálogo de conteúdo, scaffold de projeto, runtime completo de aprendizado, auto-update, publicação NPM e integração em projetos reais pertencem a incrementos posteriores sujeitos a aprovação.
