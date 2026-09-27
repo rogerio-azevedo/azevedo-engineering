@@ -1,6 +1,6 @@
-# ECC Gap Analysis Against Azevedo Engineering v0.1-v0.4
+# ECC Gap Analysis Against Azevedo Engineering v0.1-v0.5
 
-> Historical audit baseline: this analysis describes the repository before v0.4.1. The v0.4.1 increment closes the recommended Knowledge/Context foundation, persisted acceptance/revision lineage, expanded trust-boundary signals, Codex init drift and filesystem hardening. Remaining exploration/execution gaps are intentionally unchanged.
+> Historical audit baseline: sections 1–7 describe the repository before v0.4.1. v0.4.1 closed the Knowledge/Context foundation and revision lineage. v0.5 now closes the deterministic Specification Intake and Evidence-backed Exploration slice described in section 5. Execution, command evidence, review runtime and broader stack knowledge remain open.
 
 ## Executive Summary
 
@@ -255,14 +255,16 @@ Implemented before Explorer so ECC expertise is not embedded in adapter prompts.
 
 This is foundation work, not a large skill library and not an executor.
 
-### v0.5 — Evidence-backed Exploration
+### v0.5 — Evidence-backed Exploration (implemented)
 
 - deterministic reconnaissance plus semantic/bounded exploration workflow;
 - harness-neutral ExplorationArtifact;
 - exact citations, fact/inference/unknown separation, similar patterns, flows, tests, dependencies and risk signals;
 - stop/defer reasons and context budget;
 - evidence-backed plan derivation/revision;
-- Codex adapter as the first execution surface, with read-only fallback inline when subagents are unavailable.
+- provider-agnostic CLI surface with dry-run; no subagent or LLM dependency.
+
+The implementation also adds a versioned `FeatureSpecification`, immutable persistence under `.azevedo/specifications/` and `.azevedo/explorations/`, eight exploration Knowledge Units with pinned ECC provenance, acceptance-coverage links and read-only dogfood against backend, frontend and a real product specification. Partial and blocked results are first-class; no target command or feature implementation is performed.
 
 ### v0.6 — Minimal execution and verification evidence
 

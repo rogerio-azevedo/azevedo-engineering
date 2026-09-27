@@ -1,18 +1,41 @@
-import { constants, accessSync, realpathSync, readdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { constants, accessSync, lstatSync, readFileSync, realpathSync, readdirSync, statSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
+import { z } from "zod";
 import { createCodexInitializationArtifacts } from "../adapters/codex/create-init-artifacts.js";
 import { createCoreInitializationArtifacts } from "../core/initialization/artifacts.js";
 import { applyInitPlan } from "../core/initialization/init-apply.js";
 import { buildInitPlan } from "../core/initialization/init-plan.js";
 import { createInitReport } from "../core/initialization/init-report.js";
 import { createInspectResult } from "../core/inspection/inspect-result.js";
-import { buildEngineeringPlan } from "../core/planning/engineering-plan.js";
+import { exploreProject } from "../core/exploration/explore-project.js";
+import {
+  applyExplorationArtifactOperation,
+  buildExplorationArtifactOperation,
+} from "../core/exploration/exploration-persistence.js";
+import { ExplorationArtifactSchema } from "../core/exploration/exploration-artifact.js";
+import { buildEngineeringPlan, EngineeringPlanSchema } from "../core/planning/engineering-plan.js";
 import { validateInitializedProject } from "../core/planning/initialized-project.js";
 import {
   applyPlanArtifactOperation,
   buildPlanArtifactOperation,
   createPlanCommandReport,
 } from "../core/planning/plan-persistence.js";
+import {
+  applyPlanRevisionArtifactOperation,
+  buildPlanRevisionArtifactOperation,
+} from "../core/planning/plan-revision-persistence.js";
+import { EngineeringPlanRevisionSchema } from "../core/planning/plan-revision.js";
+import {
+  createTaskSpecification,
+  FeatureSpecificationSchema,
+  parseFeatureSpecification,
+  type FeatureSpecification,
+} from "../core/specification/feature-specification.js";
+import {
+  applySpecificationArtifactOperation,
+  buildSpecificationArtifactOperation,
+} from "../core/specification/specification-persistence.js";
+import { renderHumanExploration } from "./render-exploration.js";
 import { renderHumanInspection } from "./render-inspection.js";
 import { renderHumanInitialization } from "./render-initialization.js";
 import { renderHumanPlan } from "./render-plan.js";
@@ -44,11 +67,13 @@ const GENERAL_HELP = `Usage:
   azevedo inspect [path] [--json]
   azevedo init [path] [--dry-run] [--json]
   azevedo plan [path] --task <task> [--json]
+  azevedo explore [path] --plan <plan-id> [--spec <file>] [--dry-run] [--json]
 
 Commands:
   inspect    Inspect a project without modifying it
   init       Safely initialize Azevedo Engineering in a recognized project
   plan       Create a deterministic engineering plan for an initialized project
+  explore    Build evidence-backed implementation context without executing the plan
 
 Options:
   --help     Show help
@@ -90,6 +115,20 @@ Options:
   --help     Show help
 `;
 
+const EXPLORE_HELP = `Usage:
+  azevedo explore [path] --plan <plan-id> [--spec <file>] [--dry-run] [--json]
+
+Arguments:
+  path       Initialized project directory (default: current directory)
+
+Options:
+  --plan     Required deterministic plan id
+  --spec     Optional JSON specification input; defaults to the plan task
+  --dry-run  Explore and validate without writing artifacts
+  --json     Output machine-readable JSON
+  --help     Show help
+`;
+
 type InspectArguments = {
   help: boolean;
   json: boolean;
@@ -103,6 +142,30 @@ type InitArguments = InspectArguments & {
 type PlanArguments = InspectArguments & {
   task: string | undefined;
 };
+
+type ExploreArguments = InspectArguments & {
+  planId: string | undefined;
+  specificationPath: string | undefined;
+  dryRun: boolean;
+};
+
+const ExploreOperationReportSchema = z.object({
+  action: z.enum(["create", "unchanged", "conflict"]),
+  artifact: z.string().min(1),
+  reason: z.string().min(1).optional(),
+}).strict();
+
+export const ExploreCommandReportSchema = z.object({
+  schemaVersion: z.literal(1),
+  outcome: z.enum(["created", "unchanged", "conflict", "dry-run"]),
+  dryRun: z.boolean(),
+  specification: FeatureSpecificationSchema,
+  exploration: ExplorationArtifactSchema,
+  revision: EngineeringPlanRevisionSchema.nullable(),
+  operations: z.array(ExploreOperationReportSchema).min(2),
+}).strict();
+
+export type ExploreCommandReport = z.infer<typeof ExploreCommandReportSchema>;
 
 function parseInspectArguments(args: readonly string[]): InspectArguments {
   let help = false;
@@ -171,6 +234,40 @@ function parsePlanArguments(args: readonly string[]): PlanArguments {
   return { help, json, path: projectPath ?? ".", task };
 }
 
+function parseExploreArguments(args: readonly string[]): ExploreArguments {
+  let help = false;
+  let json = false;
+  let dryRun = false;
+  let projectPath: string | undefined;
+  let planId: string | undefined;
+  let specificationPath: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--help" || argument === "-h") help = true;
+    else if (argument === "--json") json = true;
+    else if (argument === "--dry-run") dryRun = true;
+    else if (argument === "--plan" || argument === "--spec") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) throw new CliError(`Option ${argument} requires a value.`, EXIT_INVALID_USAGE);
+      if (argument === "--plan") {
+        if (planId !== undefined) throw new CliError("Option --plan may only be provided once.", EXIT_INVALID_USAGE);
+        planId = value;
+      } else {
+        if (specificationPath !== undefined) throw new CliError("Option --spec may only be provided once.", EXIT_INVALID_USAGE);
+        specificationPath = value;
+      }
+      index += 1;
+    } else if (argument?.startsWith("-")) throw new CliError(`Unknown option: ${argument}`, EXIT_INVALID_USAGE);
+    else if (projectPath !== undefined) throw new CliError(`Unexpected argument: ${argument}`, EXIT_INVALID_USAGE);
+    else projectPath = argument;
+  }
+  if (!help && !planId) throw new CliError("Option --plan is required.", EXIT_INVALID_USAGE);
+  if (planId && !/^plan-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{8}$/.test(planId)) {
+    throw new CliError("Option --plan must be a deterministic plan id.", EXIT_INVALID_USAGE);
+  }
+  return { help, json, dryRun, path: projectPath ?? ".", planId, specificationPath };
+}
+
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -198,6 +295,38 @@ export function resolveProjectRoot(projectPath: string, cwd: string): string {
   }
 }
 
+function isWithin(root: string, candidate: string): boolean {
+  const value = relative(root, candidate);
+  return value !== ".." && !value.startsWith(`..${sep}`) && resolve(root, value) === candidate;
+}
+
+function readPlan(root: string, planId: string) {
+  const path = join(root, ".azevedo", "plans", `${planId}.json`);
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink() || !stats.isFile() || !isWithin(root, realpathSync(path))) {
+    throw new Error(`Plan artifact is not a safe regular file: .azevedo/plans/${planId}.json`);
+  }
+  const plan: unknown = JSON.parse(readFileSync(path, "utf8"));
+  const parsed = EngineeringPlanSchema.parse(plan);
+  if (parsed.id !== planId) throw new Error("Plan id does not match the requested artifact.");
+  return parsed;
+}
+
+function readSpecification(specificationPath: string, cwd: string): FeatureSpecification {
+  const path = resolve(cwd, specificationPath);
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink() || !stats.isFile()) throw new Error(`Specification input is not a safe regular file: ${path}`);
+  return parseFeatureSpecification(JSON.parse(readFileSync(path, "utf8")));
+}
+
+function operationReport(operation: { action: string; artifact: string; reason?: string }) {
+  return ExploreOperationReportSchema.parse({
+    action: operation.action,
+    artifact: operation.artifact,
+    ...(operation.reason ? { reason: operation.reason } : {}),
+  });
+}
+
 export function runCli(
   argv: readonly string[],
   io: CliIo,
@@ -222,7 +351,7 @@ export function runCli(
       return EXIT_SUCCESS;
     }
 
-    if (command !== "inspect" && command !== "init" && command !== "plan") {
+    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore") {
       throw new CliError(`Unknown command: ${command}`, EXIT_INVALID_USAGE);
     }
 
@@ -278,6 +407,53 @@ export function runCli(
         return report.outcome === "conflict" ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
       } catch (error) {
         throw new CliError(`Planning failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+      }
+    }
+
+    if (command === "explore") {
+      const exploreArguments = parseExploreArguments(commandArguments);
+      if (exploreArguments.help) {
+        io.stdout(EXPLORE_HELP);
+        return EXIT_SUCCESS;
+      }
+      const root = resolveProjectRoot(exploreArguments.path, options.cwd);
+      try {
+        const inspection = createInspectResult(root);
+        if (inspection.kind === "project-group") throw new Error("Exploration requires one concrete project, not a project group.");
+        if (inspection.topology.state === "unknown") throw new Error("There is not enough evidence of a recognizable project to explore.");
+        validateInitializedProject(root);
+        const plan = readPlan(root, exploreArguments.planId ?? "");
+        const specification = exploreArguments.specificationPath
+          ? readSpecification(exploreArguments.specificationPath, options.cwd)
+          : createTaskSpecification(plan);
+        const result = exploreProject(root, inspection, plan, specification);
+        const specificationOperation = buildSpecificationArtifactOperation(root, specification);
+        const explorationOperation = buildExplorationArtifactOperation(root, result.artifact);
+        const revisionOperation = result.revision ? buildPlanRevisionArtifactOperation(root, result.revision) : null;
+        const operations = [specificationOperation, explorationOperation, ...(revisionOperation ? [revisionOperation] : [])];
+        const conflict = operations.find((operation) => operation.action === "conflict");
+        if (!exploreArguments.dryRun && !conflict) {
+          applySpecificationArtifactOperation(root, specificationOperation);
+          applyExplorationArtifactOperation(root, explorationOperation);
+          if (revisionOperation) applyPlanRevisionArtifactOperation(root, revisionOperation);
+        }
+        const outcome = exploreArguments.dryRun
+          ? "dry-run" as const
+          : conflict ? "conflict" as const
+            : operations.some((operation) => operation.action === "create") ? "created" as const : "unchanged" as const;
+        const report = ExploreCommandReportSchema.parse({
+          schemaVersion: 1,
+          outcome,
+          dryRun: exploreArguments.dryRun,
+          specification,
+          exploration: result.artifact,
+          revision: result.revision,
+          operations: operations.map(operationReport),
+        });
+        io.stdout(exploreArguments.json ? `${JSON.stringify(report, null, 2)}\n` : renderHumanExploration(report));
+        return conflict ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
+      } catch (error) {
+        throw new CliError(`Exploration failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
       }
     }
 

@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.4.1 preserva inspection, initialization e Engineering Plans determinísticos e adiciona a foundation de Knowledge/Context, revisões imutáveis e hardening de persistência.
+Engineering harness reutilizável para coding agents. A v0.5 preserva inspection, initialization e Engineering Plans determinísticos e adiciona Specification Intake e exploração read-only baseada em evidência.
 
 ## Inspect
 
@@ -63,16 +63,39 @@ Project groups não são planejados automaticamente. O usuário precisa selecion
 
 ## Knowledge/Context foundation
 
-O core expõe `KnowledgeUnit` e `ContextManifest` para selecionar somente conhecimento aplicável por fase, task, risco, sinais, tecnologia, capability e prefixo de path. A resolução é determinística, explica cada seleção, inclui dependências e falha em conflitos. O catálogo inicial é propositalmente limitado a quatro sínteses com proveniência fixa do ECC.
+O core expõe `KnowledgeUnit` e `ContextManifest` para selecionar somente conhecimento aplicável por fase, task, risco, sinais, tecnologia, capability e prefixo de path. A resolução é determinística, explica cada seleção, inclui dependências e falha em conflitos. A foundation começou com quatro sínteses de uso geral com proveniência fixa do ECC.
 
-O Plan ID identifica a intenção inicial. Enrichment não sobrescreve o plano base: critérios de aceite e contexto descoberto podem ser persistidos como `EngineeringPlanRevision` encadeada e create-only. Essas APIs são foundation; a v0.4.1 não executa o plano, não aciona Explorer e não integra LLM.
+Na v0.5, o catálogo totaliza doze unidades: oito unidades específicas cobrem reconnaissance, terminologia, entry points/flows, padrões similares, contratos/consumidores, testes, disciplina de evidência e stop/defer. O `ContextManifest` do artefato registra exatamente quais unidades foram selecionadas e por quê.
+
+O Plan ID identifica a intenção inicial. Enrichment não sobrescreve o plano base: critérios de aceite e contexto descoberto são persistidos como `EngineeringPlanRevision` encadeada e create-only.
+
+## Explore
+
+```bash
+azevedo explore . --plan plan-adicionar-comportamento-12345678 --dry-run
+azevedo explore . --plan plan-adicionar-comportamento-12345678 --spec ./feature-spec.json --json
+```
+
+`explore` recebe um plano persistido e uma Specification JSON opcional. Sem `--spec`, cria uma Specification mínima exclusivamente a partir da task do plano; campos ausentes continuam ausentes. Com `--spec`, preserva objetivo, regras, cenários, decisões, restrições, critérios de aceite, fora de escopo, questões abertas e proveniência fornecidos. O `objective` precisa corresponder exatamente à task do plan, impedindo associação acidental entre features diferentes.
+
+A Specification é autoridade de intenção. O código é evidência do comportamento atual e nunca vira silenciosamente regra de negócio. A exploração faz inventário estrutural, expansão terminológica determinística, busca de entry points, flows, implementações similares, contratos/consumidores, testes, dependências, riscos e unknowns. O resultado informa `ready`, `partial` ou `blocked` e sempre registra uma razão de parada.
+
+Sem `--dry-run`, artifacts imutáveis são criados somente após preflight de conflitos:
+
+```text
+.azevedo/specifications/<specification-id>.json
+.azevedo/explorations/<exploration-id>.json
+.azevedo/plans/<plan-id>/revisions/<revision-id>.json
+```
+
+`explore` não executa scripts, testes, builds ou código do target; não implementa a feature; não usa LLM; e não depende do Codex. O adapter Codex é apenas a primeira superfície de consumo. `--dry-run` produz o mesmo contexto e revisão proposta sem gravar artifacts.
 
 Exit codes:
 
 | Código | Significado |
 | --- | --- |
-| `0` | Inspection, initialization ou planning concluído; também dry-run válido |
-| `1` | Erro operacional ou conflito que bloqueia init/plan |
+| `0` | Inspection, initialization, planning ou exploration concluído; também dry-run válido |
+| `1` | Erro operacional ou conflito que bloqueia init/plan/explore |
 | `2` | Comando, opção ou argumento inválido |
 
 ## Desenvolvimento local
@@ -84,11 +107,12 @@ node dist/src/cli.js inspect
 node dist/src/cli.js inspect --json
 node dist/src/cli.js init . --dry-run
 node dist/src/cli.js plan . --task "Atualizar documentação"
+node dist/src/cli.js explore . --plan <plan-id> --dry-run
 pnpm verify
 ```
 
-O package expõe o bin `azevedo`, preparando execução futura via `npx @azevedo/engineering inspect`, `init` e `plan`. A publicação no NPM ainda não faz parte desta versão.
+O package expõe o bin `azevedo`, preparando execução futura via `npx @azevedo/engineering inspect`, `init`, `plan` e `explore`. A publicação no NPM ainda não faz parte desta versão.
 
-Esta versão também mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Update, executor, outros comandos mutáveis, plugin, hooks e MCP ainda não foram implementados.
+Esta versão também mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Implementação, execution/verification runtime, update, plugin, hooks, MCP e LLM ainda não foram implementados.
 
 Consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para os limites e decisões do projeto.

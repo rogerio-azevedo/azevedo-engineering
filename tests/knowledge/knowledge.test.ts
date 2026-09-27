@@ -19,7 +19,7 @@ const baseContext = {
 };
 
 test("the initial knowledge catalog is small, valid, and fully provenance-linked", () => {
-  assert.equal(KNOWLEDGE_CATALOG.length, 4);
+  assert.equal(KNOWLEDGE_CATALOG.length, 12);
   for (const unit of KNOWLEDGE_CATALOG) {
     assert.deepEqual(KnowledgeUnitSchema.parse(unit), unit);
     assert.ok(unit.provenance.sources.length > 0);
@@ -36,9 +36,23 @@ test("context resolution selects only applicable knowledge with deterministic re
   const second = resolveContextManifest(KNOWLEDGE_CATALOG, baseContext);
 
   assert.deepEqual(first, second);
-  assert.deepEqual(first.selected.map((selection) => selection.id), ["knowledge.exploration.bounded"]);
-  assert.deepEqual(first.selected[0]?.reason, ["phase:research"]);
-  assert.equal(first.totalEstimatedTokens, 240);
+  assert.deepEqual(first.selected.map((selection) => selection.id), [
+    "knowledge.exploration.bounded",
+    "knowledge.exploration.entry-flow",
+    "knowledge.exploration.evidence",
+    "knowledge.exploration.reconnaissance",
+    "knowledge.exploration.similar-patterns",
+    "knowledge.exploration.stop-defer",
+    "knowledge.exploration.terminology",
+    "knowledge.exploration.tests",
+  ]);
+  assert.deepEqual(first.selected[0]?.reason, [
+    "phase:research",
+    "required-by:knowledge.exploration.evidence",
+    "required-by:knowledge.exploration.reconnaissance",
+    "required-by:knowledge.exploration.terminology",
+  ]);
+  assert.equal(first.totalEstimatedTokens, 1300);
   assert.equal("createdAt" in first, false);
 });
 
