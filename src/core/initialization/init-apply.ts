@@ -1,5 +1,6 @@
-import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync, type Stats } from "node:fs";
+import { lstatSync, mkdirSync, realpathSync, type Stats } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
+import { createExclusiveVerifiedFile } from "../filesystem/safe-create.js";
 import type { InitOperation, InitPlan, ProjectInitPlan } from "./init-plan.js";
 import { resolveContainedInitPath } from "./init-plan.js";
 
@@ -91,11 +92,7 @@ function applyProjectPlan(plan: ProjectInitPlan): void {
     if (operation.action !== "create") continue;
     ensureParentDirectories(plan.root, operation);
     const destination = resolveContainedInitPath(plan.root, operation.path);
-    writeFileSync(destination, operation.content, { encoding: "utf8", flag: "wx" });
-    const written = readFileSync(destination);
-    if (!written.equals(Buffer.from(operation.content, "utf8"))) {
-      throw new Error(`Initialization verification failed for ${operation.path}.`);
-    }
+    createExclusiveVerifiedFile(plan.root, destination, operation.content);
   }
 }
 

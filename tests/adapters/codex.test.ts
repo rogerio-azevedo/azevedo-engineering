@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
-import { createCodexInstallPlan, inspectProject } from "../../src/index.js";
+import { createCodexInitializationArtifacts, createCodexInstallPlan, inspectProject } from "../../src/index.js";
 
 test("Codex adapter emits a project-local baseline and four read-only roles", () => {
   const inspection = inspectProject(resolve("tests/fixtures/monorepo"));
@@ -26,6 +26,17 @@ test("Codex adapter emits a project-local baseline and four read-only roles", ()
     assert.match(artifact.content, /developer_instructions =/);
   }
   assert.ok(plan.unsupported.includes("global configuration"));
+});
+
+test("Codex init and inspected install plans share one specialist-agent authoring source", () => {
+  const inspection = inspectProject(resolve("tests/fixtures/single-repo"));
+  const initialized = createCodexInitializationArtifacts().filter((artifact) => artifact.path.endsWith(".toml"));
+  const installed = createCodexInstallPlan(inspection).artifacts.filter((artifact) => artifact.path.endsWith(".toml"));
+  assert.equal(createCodexInitializationArtifacts().length, 5);
+  assert.deepEqual(
+    initialized.map(({ path, content }) => ({ path, content })),
+    installed.map(({ path, content }) => ({ path, content })),
+  );
 });
 
 test("Codex baseline contains detected context rather than reference assumptions", () => {

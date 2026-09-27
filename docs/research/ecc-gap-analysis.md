@@ -1,5 +1,7 @@
 # ECC Gap Analysis Against Azevedo Engineering v0.1-v0.4
 
+> Historical audit baseline: this analysis describes the repository before v0.4.1. The v0.4.1 increment closes the recommended Knowledge/Context foundation, persisted acceptance/revision lineage, expanded trust-boundary signals, Codex init drift and filesystem hardening. Remaining exploration/execution gaps are intentionally unchanged.
+
 ## Executive Summary
 
 The current Azevedo foundation is not a false start. Its strongest choices—canonical harness-neutral contracts, conservative discovery, safe initialization, persistent Engineering Plans, contextual TDD, revision-bound evidence and a real Definition of Done—are equal to or stricter than the corresponding ECC ideas.
@@ -240,9 +242,9 @@ Add only when single-writer workflows are stable and evals show benefit. Preserv
 
 ## 8. Recommended Roadmap Changes
 
-### v0.4.x — Knowledge and context foundation
+### v0.4.1 — Knowledge and context foundation (implemented)
 
-Recommended before Explorer because it prevents embedding ECC expertise in adapter prompts.
+Implemented before Explorer so ECC expertise is not embedded in adapter prompts.
 
 - canonical `KnowledgeUnit`/component metadata with kind, structured selectors, non-triggers, dependencies/conflicts, provenance/license/upstream revision, context cost and eval references;
 - small initial catalog containing only exploration/intent/review foundations needed by upcoming versions;

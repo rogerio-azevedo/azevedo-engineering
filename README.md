@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.4 oferece inspection conservadora, initialization segura e Engineering Plans determinísticos.
+Engineering harness reutilizável para coding agents. A v0.4.1 preserva inspection, initialization e Engineering Plans determinísticos e adiciona a foundation de Knowledge/Context, revisões imutáveis e hardening de persistência.
 
 ## Inspect
 
@@ -35,10 +35,14 @@ A instalação mínima e versionável contém:
 ```text
 azevedo.config.yaml
 AGENTS.md
+.codex/agents/explorer.toml
+.codex/agents/architect.toml
+.codex/agents/reviewer.toml
+.codex/agents/security-reviewer.toml
 .azevedo/README.md
 ```
 
-O comando é idempotente: conteúdo já idêntico é `UNCHANGED` e não é reescrito. Codex é o adapter inicial; `AGENTS.md` é apenas um bootstrap fino, enquanto os contratos canônicos permanecem no core.
+O comando é idempotente: conteúdo já idêntico é `UNCHANGED` e não é reescrito. Codex é o adapter inicial; `AGENTS.md` é um bootstrap fino e os quatro papéis são read-only, enquanto os contratos canônicos permanecem no core. Init e install plan derivam esses artifacts de uma única fonte autoral.
 
 Em project groups, todos os projetos filhos são planejados e validados antes da primeira escrita. Cada filho recebe sua própria instalação e nada é criado na raiz agregadora. Um conflito em qualquer filho bloqueia o grupo inteiro.
 
@@ -51,11 +55,17 @@ azevedo plan . --task "Adicionar endpoint para arquivar uma realização"
 azevedo plan . --task "Adicionar endpoint para arquivar uma realização" --json
 ```
 
-`plan` exige um projeto já inicializado, não altera código e não executa comandos do projeto. O planner v0.4 é determinístico e não usa LLM. Ele combina a task com inspection, risk classification, TDD contextual e capabilities reais, preservando unknowns em vez de inventar arquivos ou comandos.
+`plan` exige um projeto já inicializado, não altera código e não executa comandos do projeto. O planner é determinístico e não usa LLM. Ele combina a task com inspection, risk classification, TDD contextual e capabilities reais, preservando unknowns em vez de inventar arquivos ou comandos.
 
 O contrato canônico é JSON e fica em `.azevedo/plans/<plan-id>.json`. A mesma task e scope produzem o mesmo ID e conteúdo: a segunda execução é `UNCHANGED`; conteúdo diferente sob o mesmo ID é `CONFLICT` e nunca é sobrescrito.
 
 Project groups não são planejados automaticamente. O usuário precisa selecionar explicitamente um projeto filho para evitar que o Azevedo adivinhe se a tarefa pertence ao backend, frontend ou ambos.
+
+## Knowledge/Context foundation
+
+O core expõe `KnowledgeUnit` e `ContextManifest` para selecionar somente conhecimento aplicável por fase, task, risco, sinais, tecnologia, capability e prefixo de path. A resolução é determinística, explica cada seleção, inclui dependências e falha em conflitos. O catálogo inicial é propositalmente limitado a quatro sínteses com proveniência fixa do ECC.
+
+O Plan ID identifica a intenção inicial. Enrichment não sobrescreve o plano base: critérios de aceite e contexto descoberto podem ser persistidos como `EngineeringPlanRevision` encadeada e create-only. Essas APIs são foundation; a v0.4.1 não executa o plano, não aciona Explorer e não integra LLM.
 
 Exit codes:
 
@@ -79,6 +89,6 @@ pnpm verify
 
 O package expõe o bin `azevedo`, preparando execução futura via `npx @azevedo/engineering inspect`, `init` e `plan`. A publicação no NPM ainda não faz parte desta versão.
 
-Esta versão também mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Update, outros comandos mutáveis, plugin, hooks e MCP ainda não foram implementados.
+Esta versão também mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Update, executor, outros comandos mutáveis, plugin, hooks e MCP ainda não foram implementados.
 
 Consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para os limites e decisões do projeto.

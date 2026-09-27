@@ -59,6 +59,6 @@ export function validateInitializedProject(projectRoot: string): InitializedProj
   }
 
   const config = parseConfig(readFileSync(configPath, "utf8"));
-  if (!config) throw new Error("azevedo.config.yaml is invalid or unsupported by plan v0.4.");
+  if (!config) throw new Error("azevedo.config.yaml is invalid or unsupported by Engineering Plan schema v1.");
   return config;
 }

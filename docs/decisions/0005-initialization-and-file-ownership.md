@@ -19,9 +19,9 @@ São Azevedo-managed `azevedo.config.yaml` e `.azevedo/README.md`. `AGENTS.md` �
 
 Project groups são inicializados como projetos independentes, sem artefatos na raiz agregadora. Todos os planos são construídos e validados antes da primeira escrita; conflito em qualquer filho bloqueia o grupo inteiro. Essa é atomicidade lógica pré-write, não uma transação de filesystem.
 
-Codex é o primeiro adapter e fornece um `AGENTS.md` curto. O core recebe artifacts tipados do adapter e permanece independente de harness. Configuração declara a intenção `adapter: codex`; discovery continua descrevendo a realidade do projeto.
+Codex é o primeiro adapter e fornece um `AGENTS.md` curto mais quatro papéis especializados read-only em `.codex/agents/`. Init e install plan usam a mesma fonte autoral desses artifacts. O core recebe artifacts tipados do adapter e permanece independente de harness. Configuração declara a intenção `adapter: codex`; discovery continua descrevendo a realidade do projeto.
 
-Aplicação valida containment, bloqueia symlinks e tipos incompatíveis, cria diretórios controladamente e usa criação exclusiva de arquivos. Arquivos idênticos não são reescritos. Falhas de I/O ainda podem ocorrer depois do preflight; rollback completo não faz parte da v0.3.
+Aplicação valida containment, bloqueia symlinks e tipos incompatíveis, cria diretórios controladamente e usa criação exclusiva de arquivos. Desde v0.4.1, a escrita também fixa e revalida identidade de diretório/arquivo, usa `O_NOFOLLOW`, `fsync` e read-back. Arquivos idênticos não são reescritos. Falhas de I/O ainda podem ocorrer depois do preflight; rollback completo não faz parte da foundation.
 
 ## Alternativas consideradas
 
@@ -29,7 +29,7 @@ Aplicação valida containment, bloqueia symlinks e tipos incompatíveis, cria d
 - Sobrescrever arquivos Azevedo-managed: descartado porque init não prova ownership histórico e não é update.
 - Fazer merge automático de `AGENTS.md`: descartado por risco de alterar instruções do usuário.
 - Oferecer `--force`: descartado nesta fase por criar bypass destrutivo.
-- Implementar rollback transacional: adiado por complexidade desproporcional ao bootstrap de três arquivos.
+- Implementar rollback transacional: adiado por complexidade desproporcional à foundation local.
 
 ## Consequências
 

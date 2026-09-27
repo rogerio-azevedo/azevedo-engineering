@@ -19,7 +19,7 @@ O formato canônico é machine-readable, sem timestamp e sem path absoluto gerad
 
 Project groups exigem seleção explícita de um projeto. Targets unknown ou não inicializados são bloqueados. Um projeto inicializado pela v0.3 permanece compatível sem migration.
 
-Plan é o contrato entre understanding e execution. Executores, agentes exploradores e verification runtime futuros poderão consumir ou enriquecer esse contrato, mas não fazem parte da v0.4. O planner v0.4 é determinístico e não usa LLM.
+Plan é o contrato entre understanding e execution. A identidade e o enrichment posterior foram formalizados no [ADR-0007](0007-engineering-plan-identity-and-immutable-revisions.md): o plano base permanece imutável e contexto descoberto vive em revisions encadeadas. Executores, agentes exploradores e verification runtime futuros poderão consumir esses contratos, mas não fazem parte da v0.4.1. O planner é determinístico e não usa LLM.
 
 ## Alternativas consideradas
 

@@ -125,3 +125,46 @@ test("a structural dependency replacement is high-risk and requires an architect
   assert.equal(result.risk, "high-risk");
   assert.equal(result.architectRequired, true);
 });
+
+test("expanded trust-boundary wording triggers explicit security signals", () => {
+  const result = classifyTask({
+    taskId: "task-webhook-upload",
+    title: "Processar webhook com file upload e deserialização de entrada externa",
+    description: "Evitar logs sensíveis e exposição de dados recebidos de URL externa.",
+    affectedPaths: ["src/webhooks/upload/serializer.ts"],
+  });
+
+  assert.equal(result.risk, "high-risk");
+  assert.equal(result.securityReviewRequired, true);
+  for (const signal of [
+    "external_input",
+    "file_upload",
+    "external_url",
+    "webhook",
+    "serialization",
+    "sensitive_logging",
+    "data_exposure",
+  ] as const) assert.ok(result.signals.includes(signal), signal);
+});
+
+test("dependency permission changes are high-risk but text inference is never critical", () => {
+  const result = classifyTask({
+    taskId: "task-dependency-permissions",
+    title: "Review dependency permissions before package installation",
+    affectedPaths: ["package.json"],
+  });
+  assert.equal(result.signals.includes("dependency_permissions"), true);
+  assert.equal(result.risk, "high-risk");
+  assert.equal(result.securityReviewRequired, true);
+  assert.equal(result.architectRequired, false);
+});
+
+test("ordinary input and logging language does not create trust-boundary signals", () => {
+  const result = classifyTask({
+    taskId: "task-copy",
+    title: "Improve input label and logging documentation",
+    affectedPaths: ["README.md"],
+  });
+  assert.deepEqual(result.signals, []);
+  assert.equal(result.risk, "trivial");
+});

@@ -1,6 +1,7 @@
-import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync, type Stats } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, realpathSync, type Stats } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
+import { createExclusiveVerifiedFile } from "../filesystem/safe-create.js";
 import { EngineeringPlanSchema, serializeEngineeringPlan, type EngineeringPlan } from "./engineering-plan.js";
 
 export const PlanArtifactOperationSchema = z.discriminatedUnion("action", [
@@ -115,10 +116,7 @@ export function applyPlanArtifactOperation(projectRoot: string, operation: PlanA
   if (resolve(destination) !== join(plansDirectory, operation.artifact.split("/").at(-1) ?? "")) {
     throw new Error(`Unexpected plan artifact path: ${operation.artifact}`);
   }
-  writeFileSync(destination, operation.content, { encoding: "utf8", flag: "wx" });
-  if (!readFileSync(destination).equals(Buffer.from(operation.content, "utf8"))) {
-    throw new Error(`Plan artifact verification failed: ${operation.artifact}`);
-  }
+  createExclusiveVerifiedFile(root, destination, operation.content);
 }
 
 export function createPlanCommandReport(

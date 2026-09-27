@@ -33,6 +33,14 @@ export const RiskSignalSchema = z.enum([
   "production",
   "filesystem",
   "process_execution",
+  "external_input",
+  "file_upload",
+  "external_url",
+  "webhook",
+  "serialization",
+  "sensitive_logging",
+  "dependency_permissions",
+  "data_exposure",
 ]);
 
 export const TaskInputSchema = z.object({

@@ -352,7 +352,7 @@ test("second init reports already-initialized in human and JSON outputs", () => 
   assert.equal(statSync(readme).mtimeMs, mtimeBefore);
 });
 
-test("second group init visibly reports six unchanged operations", () => {
+test("second group init visibly reports fourteen unchanged operations", () => {
   const group = mkdtempSync(join(tmpdir(), "azevedo-plan-init-group-"));
   const api = join(group, "api");
   const web = join(group, "web");
@@ -366,7 +366,7 @@ test("second group init visibly reports six unchanged operations", () => {
   assert.equal(second.status, 0, second.stderr);
   const report = parsePlanCompatibleJson(second.stdout);
   assert.equal(report.outcome, "already-initialized");
-  assert.equal(report.summary?.unchanged, 6);
+  assert.equal(report.summary?.unchanged, 14);
   assert.equal(report.summary?.create, 0);
 });
 

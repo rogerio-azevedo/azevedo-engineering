@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import test from "node:test";
 import {
   AZEVEDO_LOCAL_README_CONTENT,
@@ -23,12 +23,18 @@ import {
   ProjectInitPlanSchema,
   applyInitPlan,
   buildInitPlan,
+  createCodexInitializationArtifacts,
   createInspectResult,
   renderAzevedoConfig,
 } from "../../src/index.js";
 
 const cliPath = resolve("dist/src/cli.js");
 const expectedConfig = renderAzevedoConfig("codex");
+const expectedSpecialists = Object.fromEntries(
+  createCodexInitializationArtifacts()
+    .filter((artifact) => artifact.path.endsWith(".toml"))
+    .map((artifact) => [artifact.path, artifact.content]),
+);
 
 function runCli(...args: string[]) {
   return spawnSync(process.execPath, [cliPath, ...args], {
@@ -88,6 +94,9 @@ function managedContents(root: string) {
     config: readFileSync(join(root, "azevedo.config.yaml"), "utf8"),
     agents: readFileSync(join(root, "AGENTS.md"), "utf8"),
     readme: readFileSync(join(root, ".azevedo", "README.md"), "utf8"),
+    specialists: Object.fromEntries(
+      Object.keys(expectedSpecialists).map((path) => [path, readFileSync(join(root, path), "utf8")]),
+    ),
   };
 }
 
@@ -103,11 +112,11 @@ test("init creates the minimal project-local bootstrap without executing project
     config: expectedConfig,
     agents: CODEX_AGENTS_CONTENT,
     readme: AZEVEDO_LOCAL_README_CONTENT,
+    specialists: expectedSpecialists,
   });
-  for (const content of Object.values(managedContents(root))) {
-    assert.doesNotMatch(content, /\/Users\//);
-    assert.doesNotMatch(content, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  }
+  const serializedManaged = JSON.stringify(managedContents(root));
+  assert.doesNotMatch(serializedManaged, /\/Users\//);
+  assert.doesNotMatch(serializedManaged, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(existsSync(join(root, ".gitignore")), false);
   assert.equal(existsSync(join(root, "node_modules")), false);
   assert.equal(existsSync(join(root, "script-ran.txt")), false);
@@ -121,6 +130,7 @@ test("a second init is idempotent and does not rewrite unchanged files", () => {
     join(root, "azevedo.config.yaml"),
     join(root, "AGENTS.md"),
     join(root, ".azevedo", "README.md"),
+    ...Object.keys(expectedSpecialists).map((path) => join(root, path)),
   ];
   const oldTime = new Date("2000-01-01T00:00:00.000Z");
   for (const path of managed) utimesSync(path, oldTime, oldTime);
@@ -132,11 +142,27 @@ test("a second init is idempotent and does not rewrite unchanged files", () => {
   };
 
   assert.equal(second.status, 0);
-  assert.deepEqual(report.summary, { projects: 1, create: 0, unchanged: 3, conflicts: 0 });
+  assert.deepEqual(report.summary, { projects: 1, create: 0, unchanged: 7, conflicts: 0 });
   for (const [index, path] of managed.entries()) {
     assert.deepEqual(readFileSync(path), contents[index]);
     assert.equal(statSync(path).mtimeMs, oldTime.getTime());
   }
+});
+
+test("init safely completes the missing Codex roles for a pre-v0.4.1 bootstrap", () => {
+  const root = createProject("v04-bootstrap");
+  writeFileSync(join(root, "azevedo.config.yaml"), expectedConfig);
+  writeFileSync(join(root, "AGENTS.md"), CODEX_AGENTS_CONTENT);
+  mkdirSync(join(root, ".azevedo"));
+  writeFileSync(join(root, ".azevedo", "README.md"), AZEVEDO_LOCAL_README_CONTENT);
+
+  const execution = runCli("init", root, "--json");
+  const report = JSON.parse(execution.stdout) as {
+    summary: { create: number; unchanged: number; conflicts: number };
+  };
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.deepEqual(report.summary, { projects: 1, create: 4, unchanged: 3, conflicts: 0 });
+  assert.deepEqual(managedContents(root).specialists, expectedSpecialists);
 });
 
 test("dry-run human and JSON outputs are deterministic and never write", () => {
@@ -177,11 +203,11 @@ test("init blocks an unrecognized target and invalid arguments use exit code 2",
   assert.doesNotMatch(help.stdout, /--force/);
 });
 
-for (const conflictPath of ["AGENTS.md", "azevedo.config.yaml", ".azevedo/README.md"]) {
+for (const conflictPath of ["AGENTS.md", "azevedo.config.yaml", ".azevedo/README.md", ".codex/agents/reviewer.toml"]) {
   test(`different existing ${conflictPath} blocks every write`, () => {
     const root = createProject();
     const destination = join(root, conflictPath);
-    mkdirSync(join(root, ".azevedo"), { recursive: true });
+    mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, "user-owned content\n");
     const before = snapshotDirectory(root);
     const execution = runCli("init", root, "--json");
@@ -221,12 +247,13 @@ test("group init plans all projects, initializes both, and writes nothing at the
   assert.equal(report.kind, "project-group");
   assert.deepEqual(report.projects.map((project) => project.relativePath), ["api", "web"]);
   assert.equal(report.summary.projects, 2);
-  assert.equal(report.summary.create, 6);
+  assert.equal(report.summary.create, 14);
   assert.equal(report.summary.conflicts, 0);
   for (const child of ["api", "web"]) assert.deepEqual(managedContents(join(root, child)), {
     config: expectedConfig,
     agents: CODEX_AGENTS_CONTENT,
     readme: AZEVEDO_LOCAL_README_CONTENT,
+    specialists: expectedSpecialists,
   });
   assert.equal(existsSync(join(root, "azevedo.config.yaml")), false);
   assert.equal(existsSync(join(root, "AGENTS.md")), false);

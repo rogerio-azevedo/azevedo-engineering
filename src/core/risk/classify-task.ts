@@ -23,6 +23,14 @@ const SECURITY_SIGNALS = new Set([
   "integration",
   "filesystem",
   "process_execution",
+  "external_input",
+  "file_upload",
+  "external_url",
+  "webhook",
+  "serialization",
+  "sensitive_logging",
+  "dependency_permissions",
+  "data_exposure",
 ]);
 
 function inferTaskType(input: ReturnType<typeof TaskInputSchema.parse>): TaskClassification["type"] {
@@ -52,6 +60,14 @@ function inferTextSignals(text: string): TaskClassification["signals"] {
   if (/\b(credential|secret|credencial|segredo)\b/i.test(text)) signals.add("credentials");
   if (/\b(public contract|public api|contrato público|api pública)\b/i.test(text)) signals.add("public_contract");
   if (/\b(migration|migração)\b/i.test(text)) signals.add("migration");
+  if (/\b(user input|external input|untrusted input|entrada (?:do usuário|externa|não confiável))\b/i.test(text)) signals.add("external_input");
+  if (/\b(file upload|upload(?: de)? arquivo|upload de arquivos|envio de arquivo)\b/i.test(text)) signals.add("file_upload");
+  if (/\b(external url|remote url|url externa|url remota|ssrf)\b/i.test(text)) signals.add("external_url");
+  if (/\b(webhook|callback endpoint|endpoint de callback)\b/i.test(text)) signals.add("webhook");
+  if (/\b(deserializ(?:e|ation)|serializ(?:e|ation)|desserializa(?:r|ção)|serializa(?:r|ção))\b/i.test(text)) signals.add("serialization");
+  if (/\b(sensitive log(?:ging)?|log(?:ar|ging)? (?:pii|dados sensíveis|credenciais?)|logs? sensíveis)\b/i.test(text)) signals.add("sensitive_logging");
+  if (/\b(dependency permissions?|package permissions?|permissões? (?:da dependência|do pacote))\b/i.test(text)) signals.add("dependency_permissions");
+  if (/\b(data exposure|data leak|exposição de dados|vazamento de dados)\b/i.test(text)) signals.add("data_exposure");
   return [...signals];
 }
 
@@ -62,6 +78,9 @@ function inferPathSignals(paths: readonly string[]): TaskClassification["signals
     if (/(^|\/)(auth|authentication|authorization|permissions?)(\/|\.|$)/.test(path)) signals.add("auth");
     if (/(^|\/)(migrations?|prisma\/migrations|drizzle)(\/|\.|$)/.test(path)) signals.add("migration");
     if (/(^|\/)(contracts?|openapi|public-api)(\/|\.|$)/.test(path)) signals.add("public_contract");
+    if (/(^|\/)(uploads?|file-uploads?)(\/|\.|$)/.test(path)) signals.add("file_upload");
+    if (/(^|\/)(webhooks?|callbacks?)(\/|\.|$)/.test(path)) signals.add("webhook");
+    if (/(^|\/)(serializers?|deserializers?)(\/|\.|$)/.test(path)) signals.add("serialization");
   }
   return [...signals];
 }
