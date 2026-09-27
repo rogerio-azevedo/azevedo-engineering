@@ -1,6 +1,6 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Specification Intake + Evidence-backed Exploration v0.5
+- Status: base arquitetural aprovada; Guided Execution v0.6
 - Atualização: 2026-09-26
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
@@ -39,7 +39,7 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.5
+### 2.2 Não objetivos da v0.6
 
 - Publicar o pacote NPM.
 - Construir um plugin Codex completo.
@@ -48,10 +48,10 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Criar um scaffold completo de aplicação ou `create-azevedo-app`.
 - Copiar ou instalar o ECC, buscar paridade de catálogo ou depender dele em runtime.
 - Fixar modelos específicos de um coding agent.
-- Executar Engineering Plans, implementar features, acionar agents, integrar LLM ou escrever código do projeto.
+- Implementar um loop autônomo, integrar API de LLM/provider ou permitir escrita fora de uma execução explicitamente autorizada e isolada.
 - Materializar um catálogo amplo de conhecimento ou interpretar seletores por linguagem natural.
-- Executar testes/builds/linters do target durante exploration.
-- Implementar recovery loop, reviewer/security runtime, memória, learning runtime ou multi-agent orchestration.
+- Executar testes/builds/linters durante exploration; somente Execution pode invocar verification autorizada.
+- Implementar retries ilimitados, reviewer/security runtime, memória, learning runtime ou multi-agent orchestration.
 
 ### 2.3 Harness e arquitetura de referência são produtos distintos
 
@@ -214,7 +214,7 @@ O `ComponentSchema` genérico continua como metadado de catálogo e compatibilid
 
 As dimensões de seleção são fase, tipo de task, classe e sinais de risco, tecnologias, capabilities e prefixos de path. Dimensões declaradas são AND; valores dentro da dimensão são OR. Um selector vazio é inválido. O resolver inclui dependências transitivas, falha em ausência/ciclo/conflito e produz um `ContextManifest` estável com motivos e orçamento, sem timestamp.
 
-A foundation começou com quatro unidades de uso geral: entendimento/aceite, exploração limitada, review baseado em evidência e security review por trust boundary. A v0.5 acrescenta oito unidades específicas de exploration, totalizando doze. Elas são sínteses com proveniência do snapshot auditado do ECC, não cópias integrais nem dependência de runtime.
+A foundation começou com quatro unidades de uso geral. A v0.5 acrescentou oito unidades de exploration e a v0.6 acrescenta sete de execution, totalizando dezenove. Elas são sínteses com proveniência do snapshot auditado do ECC, não cópias integrais nem dependência de runtime.
 
 ## 5. Responsabilidades e fronteiras
 
@@ -265,7 +265,7 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.5 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.6 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
@@ -324,7 +324,7 @@ O pipeline é `Task → Inspect Project → Resolve Scope → Classify Risk → 
 
 IDs derivam deterministicamente da task normalizada, topologia e scope inicial. O ID representa a identidade da intenção, não um hash de toda inspection transitória. Persistência é create-only: conteúdo idêntico é unchanged; conteúdo diferente sob o mesmo ID é conflict.
 
-Pesquisa posterior não sobrescreve o plano base. `EngineeringPlanRevision` mantém o mesmo `planId`, um snapshot completo enriquecido, critérios de aceite persistentes, subject revision, fontes, Knowledge Units, sequência, parent e change summary. Cada revisão também é determinística e create-only em `.azevedo/plans/<plan-id>/revisions/<revision-id>.json`. Na v0.5, `explore` propõe e, fora de dry-run, persiste a revisão quando existe scope evidence-backed não bloqueado. Execução, agents especializados e coleta de evidence de comandos continuam futuros.
+Pesquisa posterior não sobrescreve o plano base. `EngineeringPlanRevision` mantém o mesmo `planId`, um snapshot completo enriquecido, critérios de aceite persistentes, subject revision, fontes, Knowledge Units, sequência, parent e change summary. Cada revisão também é determinística e create-only em `.azevedo/plans/<plan-id>/revisions/<revision-id>.json`. `explore` propõe e, fora de dry-run, persiste a revisão quando existe scope evidence-backed não bloqueado. Na v0.6 a revisão alimenta Guided Execution; provider automation e review especializado continuam futuros.
 
 ### 5.11 Specification Intake e Evidence-backed Exploration
 
@@ -475,7 +475,7 @@ O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.cod
 
 ## 10. Estrutura de diretórios
 
-A v0.5 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.6 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -494,6 +494,7 @@ azevedo-engineering/
 │   │   ├── planning/               # Engineering Plan, revisions e persistência
 │   │   ├── specification/          # intenção fornecida, proveniência e persistência
 │   │   ├── exploration/            # reconnaissance, evidence e artifacts
+│   │   ├── execution/              # readiness, context, session, scope e Git checkpoint
 │   │   ├── profiles/              # stack profiles/reference manifest
 │   │   ├── risk/                  # task/risk classification
 │   │   ├── agents/                # papéis canônicos
@@ -510,6 +511,7 @@ azevedo-engineering/
 │   ├── discovery/
 │   ├── initialization/
 │   ├── exploration/
+│   ├── execution/
 │   ├── planning/
 │   ├── risk/
 │   ├── verification/
@@ -525,9 +527,45 @@ azevedo-engineering/
 
 No futuro, `schemas`, `runtime` e `cli` podem virar packages independentes sem alterar os contratos. Um diretório de plugin só deverá existir quando houver implementação real do plugin.
 
-## 11. Distribuição por CLI/NPM
+## 11. Guided Execution v0.6
 
-O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.5 ainda não é publicada e não há mutação por `postinstall`.
+### 11.1 Readiness e autoridade
+
+`EngineeringPlanRevision` é a entrada de execution porque referencia a Specification e Exploration, preserva acceptance criteria e contém o plano enriquecido. `ExecutionReadiness` é binário e explicável. Não há score: qualquer condição blocking produz `blocked`.
+
+As principais condições são consistência de artifacts, acceptance criteria, source revision ainda válida, scope com entry point e affected path substantivo, verification obrigatória disponível, ausência de mudanças humanas não isoladas, write authorization e linked worktree. Questões da Specification são `product-decision` e bloqueiam; lacunas pesquisáveis do codebase são `technical-unknown` e entram como `investigate`; dependências externas ficam `observe` ou `block` conforme a evidência de disponibilidade.
+
+Readiness não reduz risk. O maior nível entre revision e exploration prevalece. Similaridade de código nunca resolve uma product decision.
+
+### 11.2 Contexto e boundary do agente
+
+`ExecutionContext` referencia Plan Revision, Specification e Exploration e materializa apenas intenção, critérios, scope, flows, padrões, contracts/tests relevantes, risk, unknowns técnicos, verification e Knowledge Units aplicáveis. O orçamento padrão simples é 6.000 tokens estimados. Specification, acceptance e scope são obrigatórios; conteúdo opcional de menor prioridade é omitido com referências preservadas.
+
+As instruções renderizadas possuem seções estáveis de intenção, evidência, critérios, scope, padrões, riscos, unknowns, constraints, verification e stop conditions. `CodingAgent.execute(context)` é uma interface do core; não há adapter de provider na v0.6. O Codex atual pode consumir o artifact e devolver resultado estruturado sem o domínio depender de sua API.
+
+### 11.3 Mutation boundary, Git e scope
+
+Inspection, Plan e Exploration permanecem read-only. Somente Execution pode autorizar source write. `--prepare` nunca escreve source; sem `--dry-run`, grava somente artifacts em `.azevedo/executions/`. A permissão de mutação é `isolated-worktree-only`, proíbe commit/push e exige autorização explícita.
+
+Antes da mutação, `ProjectCheckpoint` captura HEAD, branch, `git status`, modo de worktree e `SubjectRevision`. Mudanças humanas fora de `.azevedo`, `.codex`, `AGENTS.md` e `azevedo.config.yaml` bloqueiam. Nenhuma operação de reset, checkout destrutivo ou clean existe no runtime.
+
+Affected paths formam o scope inicial. Um arquivo adicional exige `ScopeExpansion` com razão, basis permitida e evidence ids conhecidos. Containment impede paths fora do projeto; a expansão fica no snapshot da sessão.
+
+### 11.4 Sessão, falhas e evidência
+
+Cada preparação recebe um `execution-<sequence>-<digest>`: o digest vincula revision, context e checkpoint; a sequence distingue execuções reais repetidas sem timestamp ou aleatoriedade. A sessão possui snapshots imutáveis encadeados, before/after checkpoints, attempts, changes, scope expansions, verification evidence, decisions e coverage por critério.
+
+Attempts classificam falhas antes de recovery. A v0.6 limita cada sessão a três attempts e não implementa loop automático. O estado só pode ser `completed` quando o último attempt passou, existe checkpoint final, todos os targets obrigatórios possuem evidence `pass` e cada acceptance criterion está `verified`. Código sem evidence permanece `implemented-but-unverified`.
+
+### 11.5 Verification e secrets
+
+O Verification Runtime aceita somente targets do `VerificationPlan` correspondentes a package scripts presentes na inspection atual. Usa package manager detectado, argumentos fixos, `shell: false`, timeout e digest do output. Scripts desconhecidos, capabilities indisponíveis ou padrões destrutivos (`rm -rf`, `sudo`, `git reset --hard`, `git clean`, `curl|sh` e equivalentes cobertos) são bloqueados.
+
+Artifacts persistem somente nomes de environment variables em formato `UPPER_SNAKE_CASE`. O serializer recusa campos óbvios de credential e atribuições como `API_KEY=value`. Output bruto de verification não é persistido; somente digest e resumo controlado entram em evidence.
+
+## 12. Distribuição por CLI/NPM
+
+O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.6 ainda não é publicada e não há mutação por `postinstall`.
 
 Superfície atual:
 
@@ -537,6 +575,7 @@ npx @azevedo/engineering init --dry-run
 npx @azevedo/engineering init
 npx @azevedo/engineering plan --task "Adicionar comportamento"
 npx @azevedo/engineering explore --plan <plan-id> --dry-run
+npx @azevedo/engineering execute --revision <revision-id> --prepare --dry-run
 ```
 
 Comandos futuros, ainda não implementados:
@@ -548,15 +587,15 @@ npx @azevedo/engineering verify
 npx @azevedo/engineering doctor
 ```
 
-`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, unknowns, conflitos e ambiguidades. `init` planeja antes de escrever e materializa config mínima, `AGENTS.md`, quatro papéis Codex read-only e README local quando não há conflitos. `plan` persiste intenção inicial. `explore` consome Plan + Specification, produz contexto baseado em evidência e não altera source code.
+`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, unknowns, conflitos e ambiguidades. `init` planeja antes de escrever e materializa config mínima, `AGENTS.md`, quatro papéis Codex read-only e README local quando não há conflitos. `plan` persiste intenção inicial. `explore` consome Plan + Specification e não altera source code. `execute --prepare` avalia readiness e materializa o handoff persistente sem invocar provider ou escrever source.
 
 `.azevedo/state.json` futuramente registrará versão, resolução, arquivos/blocos gerenciados, hashes e overrides. Arquivos modificados pelo usuário serão preservados e reportados. Configuração global será sempre opt-in.
 
 Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos project-local são a estratégia inicial. Cursor e Claude Code deverão usar o mesmo core.
 
-## 12. Estratégia de testes
+## 13. Estratégia de testes
 
-### 12.1 Testes determinísticos
+### 13.1 Testes determinísticos
 
 - schemas e referências do metamodelo;
 - discovery conservadora e precedência da arquitetura existente;
@@ -571,15 +610,15 @@ Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos projec
 - critérios de aceite persistentes e cadeia create-only de Engineering Plan revisions.
 - identidade de diretório/arquivo e contenção nas escritas exclusivas.
 
-### 12.2 Fixtures
+### 13.2 Fixtures
 
 A fixture monorepo representa, sem impor, a referência `apps/api`, `apps/web`, `packages/database`, `packages/contracts` e `packages/shared`, com pnpm/Turborepo. A fixture single-repo representa um projeto existente com escolhas diferentes, incluindo Prisma, para provar que inspection não força Drizzle nem monorepo.
 
-### 12.3 Evals futuros
+### 13.3 Evals futuros
 
 Skills terão casos positivos, negativos, indiretos, incompletos e adversariais. Activation e output quality serão avaliados separadamente. Evals probabilísticos não substituem contract tests e verificações reais.
 
-## 13. Decisões arquiteturais adotadas
+## 14. Decisões arquiteturais adotadas
 
 1. Core harness-agnostic é a fonte de verdade; adapters são finos.
 2. Project inspection é read-only, conservadora e anterior a `init`.
@@ -603,6 +642,9 @@ Skills terão casos positivos, negativos, indiretos, incompletos e adversariais.
 20. Specification é a autoridade de intenção; o código observado é evidência do comportamento atual.
 21. Exploration é persistida como artifact imutável, com proveniência, budget e razão explícita de parada.
 22. A exploração v0.5 é determinística, provider-agnostic, não executa o projeto e não depende de LLM.
+23. Guided Execution começa por uma Revision aprovada, separa preparação de mutação e exige autorização + linked worktree para source write.
+24. Execution IDs combinam sequence explícita e digest do contexto/checkpoint; snapshots preservam histórico imutável.
+25. Verification executa somente capabilities descobertas, sem shell, e completion exige evidence real por critério.
 
 ADRs relacionados:
 
@@ -615,10 +657,11 @@ ADRs relacionados:
 - [ADR-0007 — Engineering Plan Identity and Immutable Revisions](decisions/0007-engineering-plan-identity-and-immutable-revisions.md)
 - [ADR-0008 — Knowledge Units and Deterministic Context Selection](decisions/0008-knowledge-units-and-deterministic-context-selection.md)
 - [ADR-0009 — Specification Authority and Evidence-backed Exploration](decisions/0009-specification-authority-and-evidence-backed-exploration.md)
+- [ADR-0010 — Guided Execution, Isolation and Session Evidence](decisions/0010-guided-execution-isolation-and-session-evidence.md)
 
-## 14. Limite da v0.5
+## 15. Limite da v0.6
 
-A v0.5 preserva toda a foundation v0.4.1 e adiciona Specification Intake + Evidence-backed Exploration sem executor de implementação:
+A v0.6 preserva toda a foundation v0.5 e adiciona Guided Execution sem loop autônomo:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -653,7 +696,7 @@ A v0.5 preserva toda a foundation v0.4.1 e adiciona Specification Intake + Evide
 - persistência create-only, idempotência, conflito e symlink safety;
 - compatibilidade com projetos v0.3 sem migration;
 - resultado `already-initialized` para init sem criações.
-- doze Knowledge Units com proveniência fixa e selectors determinísticos, sendo oito específicas de exploration;
+- dezenove Knowledge Units com proveniência fixa e selectors determinísticos, sendo oito de exploration e sete de execution;
 - `ContextManifest` com seleção, exclusões, dependências, conflitos, razões e orçamento;
 - critérios de aceite persistentes e `EngineeringPlanRevision` imutável/encadeada;
 - semântica formal de Plan ID como identidade da intenção inicial;
@@ -669,5 +712,10 @@ A v0.5 preserva toda a foundation v0.4.1 e adiciona Specification Intake + Evide
 - revisão de plano proposta sem alterar identidade ou artifact original;
 - contract/integration tests de Specification, exploration, CLI, persistence, symlink safety e no-source-write;
 - dogfood read-only em backend, frontend e uma Specification real do Síndico Pro.
+- `ExecutionReadiness`, `ExecutionContext`, `ExecutionSession`, `ProjectCheckpoint`, `ScopeExpansion` e interface `CodingAgent` provider-neutral;
+- CLI `execute --revision --prepare`, dry-run forte e autorização separada para linked worktree;
+- persistence create-only em `.azevedo/executions/`, snapshots append-only e três attempts no máximo;
+- Verification Runtime de scripts descobertos, `shell: false`, deny rules e EvidenceRecord;
+- product decisions bloqueantes, technical unknowns investigáveis, risk preservation e secret-value rejection.
 
-O trabalho para nesta fronteira. Implementação de feature, execução de plano, verification/review/security runtime, recovery loop, memória/learning, multi-agent, verify CLI, update, migration do harness, rollback transacional, `--force`, prompts interativos, LLM, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.
+O trabalho para na preparação e no registro disciplinado de uma Guided Execution. O core possui readiness, contexto, sessão, scope control e verification runtime; não possui loop autônomo nem integração de provider. Review/security runtime, PR/commit/push, deployment, memória/learning, multi-agent, provider selection, update, migration do harness, rollback transacional, `--force`, prompts interativos, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.

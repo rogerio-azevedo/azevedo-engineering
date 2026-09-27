@@ -25,6 +25,14 @@ import {
   buildPlanRevisionArtifactOperation,
 } from "../core/planning/plan-revision-persistence.js";
 import { EngineeringPlanRevisionSchema } from "../core/planning/plan-revision.js";
+import { loadExecutionInputs } from "../core/execution/execution-loader.js";
+import { captureProjectCheckpoint } from "../core/execution/project-checkpoint.js";
+import { prepareExecution } from "../core/execution/prepare-execution.js";
+import {
+  applyExecutionArtifactOperations,
+  buildExecutionArtifactOperations,
+  nextExecutionSequence,
+} from "../core/execution/execution-persistence.js";
 import {
   createTaskSpecification,
   FeatureSpecificationSchema,
@@ -68,12 +76,14 @@ const GENERAL_HELP = `Usage:
   azevedo init [path] [--dry-run] [--json]
   azevedo plan [path] --task <task> [--json]
   azevedo explore [path] --plan <plan-id> [--spec <file>] [--dry-run] [--json]
+  azevedo execute [path] --revision <revision-id> --prepare [--authorize-isolated-write] [--context-budget <tokens>] [--dry-run] [--json]
 
 Commands:
   inspect    Inspect a project without modifying it
   init       Safely initialize Azevedo Engineering in a recognized project
   plan       Create a deterministic engineering plan for an initialized project
   explore    Build evidence-backed implementation context without executing the plan
+  execute    Prepare a bounded execution session; never invokes a coding provider
 
 Options:
   --help     Show help
@@ -129,6 +139,22 @@ Options:
   --help     Show help
 `;
 
+const EXECUTE_HELP = `Usage:
+  azevedo execute [path] --revision <revision-id> --prepare [--authorize-isolated-write] [--context-budget <tokens>] [--dry-run] [--json]
+
+Arguments:
+  path                        Initialized project directory (default: current directory)
+
+Options:
+  --revision                  Required immutable plan revision id
+  --prepare                   Required read/prepare mode; source code is never mutated
+  --authorize-isolated-write  Record explicit permission for a later agent in a linked worktree
+  --context-budget            Maximum estimated context tokens (default: 6000)
+  --dry-run                   Evaluate and show artifacts without writing even harness state
+  --json                      Output machine-readable JSON
+  --help                      Show help
+`;
+
 type InspectArguments = {
   help: boolean;
   json: boolean;
@@ -146,6 +172,14 @@ type PlanArguments = InspectArguments & {
 type ExploreArguments = InspectArguments & {
   planId: string | undefined;
   specificationPath: string | undefined;
+  dryRun: boolean;
+};
+
+type ExecuteArguments = InspectArguments & {
+  revisionId: string | undefined;
+  prepare: boolean;
+  authorizeIsolatedWrite: boolean;
+  contextBudget: number;
   dryRun: boolean;
 };
 
@@ -268,6 +302,66 @@ function parseExploreArguments(args: readonly string[]): ExploreArguments {
   return { help, json, dryRun, path: projectPath ?? ".", planId, specificationPath };
 }
 
+function parseExecuteArguments(args: readonly string[]): ExecuteArguments {
+  let help = false;
+  let json = false;
+  let prepare = false;
+  let dryRun = false;
+  let authorizeIsolatedWrite = false;
+  let projectPath: string | undefined;
+  let revisionId: string | undefined;
+  let contextBudget = 6_000;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--help" || argument === "-h") help = true;
+    else if (argument === "--json") json = true;
+    else if (argument === "--prepare") prepare = true;
+    else if (argument === "--dry-run") dryRun = true;
+    else if (argument === "--authorize-isolated-write") authorizeIsolatedWrite = true;
+    else if (argument === "--revision" || argument === "--context-budget") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) throw new CliError(`Option ${argument} requires a value.`, EXIT_INVALID_USAGE);
+      if (argument === "--revision") {
+        if (revisionId) throw new CliError("Option --revision may only be provided once.", EXIT_INVALID_USAGE);
+        revisionId = value;
+      } else {
+        contextBudget = Number(value);
+        if (!Number.isInteger(contextBudget) || contextBudget < 500) {
+          throw new CliError("Option --context-budget must be an integer of at least 500.", EXIT_INVALID_USAGE);
+        }
+      }
+      index += 1;
+    } else if (argument?.startsWith("-")) throw new CliError(`Unknown option: ${argument}`, EXIT_INVALID_USAGE);
+    else if (projectPath !== undefined) throw new CliError(`Unexpected argument: ${argument}`, EXIT_INVALID_USAGE);
+    else projectPath = argument;
+  }
+  if (!help && !revisionId) throw new CliError("Option --revision is required.", EXIT_INVALID_USAGE);
+  if (!help && !prepare) throw new CliError("Option --prepare is required in v0.6.", EXIT_INVALID_USAGE);
+  if (revisionId && !/^plan-revision-[1-9][0-9]*-[a-f0-9]{8}$/.test(revisionId)) {
+    throw new CliError("Option --revision must be an immutable plan revision id.", EXIT_INVALID_USAGE);
+  }
+  return { help, json, prepare, authorizeIsolatedWrite, contextBudget, dryRun, path: projectPath ?? ".", revisionId };
+}
+
+function renderExecutionPreparation(result: ReturnType<typeof prepareExecution>, operations: readonly { action: string; artifact: string }[], dryRun: boolean): string {
+  const readiness = result.preparation.readiness;
+  return [
+    "Execution preparation",
+    `  Status: ${readiness.status}`,
+    `  Mode: ${dryRun ? "dry-run" : "persist harness artifacts only"}`,
+    `  Write authorization: ${result.preparation.writeAuthorized ? "isolated-worktree-only" : "denied"}`,
+    `  Context: ${result.preparation.contextId ?? "not produced"}`,
+    `  Session: ${result.preparation.sessionId ?? "not produced"}`,
+    "  Reasons:",
+    ...(readiness.reasons.length > 0
+      ? readiness.reasons.map((reason) => `    ${reason.blocking ? "BLOCK" : "INFO"} ${reason.code}: ${reason.message}`)
+      : ["    none"]),
+    "  Artifacts:",
+    ...operations.map((operation) => `    ${operation.action}: ${operation.artifact}`),
+    result.instructions ? "\nPrepared agent instructions:\n" + result.instructions : "",
+  ].join("\n") + "\n";
+}
+
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -351,7 +445,7 @@ export function runCli(
       return EXIT_SUCCESS;
     }
 
-    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore") {
+    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore" && command !== "execute") {
       throw new CliError(`Unknown command: ${command}`, EXIT_INVALID_USAGE);
     }
 
@@ -454,6 +548,39 @@ export function runCli(
         return conflict ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
       } catch (error) {
         throw new CliError(`Exploration failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+      }
+    }
+
+    if (command === "execute") {
+      const executeArguments = parseExecuteArguments(commandArguments);
+      if (executeArguments.help) {
+        io.stdout(EXECUTE_HELP);
+        return EXIT_SUCCESS;
+      }
+      const root = resolveProjectRoot(executeArguments.path, options.cwd);
+      try {
+        const inspection = createInspectResult(root);
+        if (inspection.kind === "project-group") throw new Error("Execution requires one concrete project, not a project group.");
+        if (inspection.topology.state === "unknown") throw new Error("There is not enough evidence of a recognizable project to execute.");
+        validateInitializedProject(root);
+        const artifacts = loadExecutionInputs(root, executeArguments.revisionId ?? "");
+        const result = prepareExecution({
+          inspection,
+          ...artifacts,
+          checkpoint: captureProjectCheckpoint(root),
+          executionSequence: nextExecutionSequence(root),
+          writeAuthorized: executeArguments.authorizeIsolatedWrite,
+          requireIsolation: true,
+          maxContextTokens: executeArguments.contextBudget,
+        });
+        const operations = buildExecutionArtifactOperations(root, result.preparation, result.context, result.session);
+        if (!executeArguments.dryRun) applyExecutionArtifactOperations(root, operations);
+        io.stdout(executeArguments.json
+          ? `${JSON.stringify({ ...result, dryRun: executeArguments.dryRun, operations }, null, 2)}\n`
+          : renderExecutionPreparation(result, operations, executeArguments.dryRun));
+        return result.preparation.readiness.status === "ready" ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR;
+      } catch (error) {
+        throw new CliError(`Execution preparation failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
       }
     }
 

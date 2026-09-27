@@ -138,3 +138,31 @@ test("explore CLI persists immutable context without changing target source and 
   assert.equal(snapshot(root), beforeConflict);
   assert.equal(readFileSync(join(root, specArtifact), "utf8"), "owner content\n");
 });
+
+test("execute CLI prepares deterministic context in dry-run without mutating source or harness state", () => {
+  const { root, specPath } = project();
+  assert.equal(runCli("init", root).status, 0);
+  const planned = runCli("plan", root, "--task", "Adicionar endpoint para arquivar uma realização", "--json");
+  const planId = (JSON.parse(planned.stdout) as { plan: { id: string } }).plan.id;
+  const explored = runCli("explore", root, "--plan", planId, "--spec", specPath, "--json");
+  assert.equal(explored.status, 0, explored.stderr);
+  const revisionId = (JSON.parse(explored.stdout) as { revision: { id: string } }).revision.id;
+  const before = snapshot(root);
+  const execution = runCli("execute", root, "--revision", revisionId, "--prepare", "--dry-run", "--json");
+  assert.equal(execution.status, 1, execution.stderr);
+  assert.equal(snapshot(root), before);
+  const report = JSON.parse(execution.stdout) as {
+    preparation: { readiness: { status: string; reasons: Array<{ code: string }> }; contextId: string | null };
+    context: { knowledgeManifest: { selected: Array<{ id: string }> }; permissions: { sourceWrite: string } } | null;
+    operations: Array<{ action: string; artifact: string }>;
+    dryRun: boolean;
+  };
+  assert.equal(report.dryRun, true);
+  assert.equal(report.preparation.readiness.status, "blocked");
+  assert.ok(report.preparation.readiness.reasons.some((reason) => reason.code === "write-not-authorized"));
+  assert.ok(report.preparation.contextId);
+  assert.equal(report.context?.permissions.sourceWrite, "denied");
+  assert.ok(report.context?.knowledgeManifest.selected.some((item) => item.id === "knowledge.execution.scope-control"));
+  assert.ok(report.operations.every((operation) => operation.action === "create"));
+  assert.ok(report.operations.every((operation) => operation.artifact.startsWith(".azevedo/executions/")));
+});

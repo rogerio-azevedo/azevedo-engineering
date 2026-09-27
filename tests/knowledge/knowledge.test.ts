@@ -19,7 +19,7 @@ const baseContext = {
 };
 
 test("the initial knowledge catalog is small, valid, and fully provenance-linked", () => {
-  assert.equal(KNOWLEDGE_CATALOG.length, 12);
+  assert.equal(KNOWLEDGE_CATALOG.length, 19);
   for (const unit of KNOWLEDGE_CATALOG) {
     assert.deepEqual(KnowledgeUnitSchema.parse(unit), unit);
     assert.ok(unit.provenance.sources.length > 0);

@@ -1,6 +1,6 @@
-# ECC Gap Analysis Against Azevedo Engineering v0.1-v0.5
+# ECC Gap Analysis Against Azevedo Engineering v0.1-v0.6
 
-> Historical audit baseline: sections 1–7 describe the repository before v0.4.1. v0.4.1 closed the Knowledge/Context foundation and revision lineage. v0.5 now closes the deterministic Specification Intake and Evidence-backed Exploration slice described in section 5. Execution, command evidence, review runtime and broader stack knowledge remain open.
+> Historical audit baseline: sections 1–7 describe the repository before v0.4.1. v0.4.1 closed the Knowledge/Context foundation and revision lineage; v0.5 closed deterministic Specification Intake and Evidence-backed Exploration. v0.6 closes Guided Execution preparation, sessions and trusted package-script verification. Autonomous provider execution, review runtime and broader stack knowledge remain open.
 
 ## Executive Summary
 
@@ -266,14 +266,16 @@ This is foundation work, not a large skill library and not an executor.
 
 The implementation also adds a versioned `FeatureSpecification`, immutable persistence under `.azevedo/specifications/` and `.azevedo/explorations/`, eight exploration Knowledge Units with pinned ECC provenance, acceptance-coverage links and read-only dogfood against backend, frontend and a real product specification. Partial and blocked results are first-class; no target command or feature implementation is performed.
 
-### v0.6 — Minimal execution and verification evidence
+### v0.6 — Guided execution and verification evidence (implemented)
 
-- consume an approved enriched plan;
-- single-writer bounded implementation loop;
-- contextual TDD and incremental recovery;
-- verification executor and EvidenceRecord persistence;
-- subject-revision invalidation and execution checkpoints;
-- no remote/external effects beyond explicit authority.
+- consumes an enriched immutable Plan Revision with Specification and Exploration provenance;
+- binary readiness separates product blockers from investigable technical unknowns;
+- budgeted ExecutionContext plus seven execution Knowledge Units with pinned ECC provenance;
+- provider-neutral CodingAgent handoff, explicit isolated-write permission and evidence-backed scope expansion;
+- append-only ExecutionSession snapshots, classified attempts and a three-attempt recovery ceiling;
+- trusted-script verification executor with EvidenceRecord output, deny rules and no shell;
+- subject-revision invalidation, HEAD/status checkpoints, dirty-work protection and secret-value rejection;
+- no provider API, autonomous coding loop, commit, push or external mutation.
 
 ### v0.7 — Review and security system
 

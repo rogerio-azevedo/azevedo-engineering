@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.5 preserva inspection, initialization e Engineering Plans determinísticos e adiciona Specification Intake e exploração read-only baseada em evidência.
+Engineering harness reutilizável para coding agents. A v0.6 preserva o pipeline determinístico até Exploration e adiciona Guided Execution: readiness explicável, contexto limitado, sessões persistentes e verification segura, sem acoplar o core a um provider.
 
 ## Inspect
 
@@ -65,7 +65,7 @@ Project groups não são planejados automaticamente. O usuário precisa selecion
 
 O core expõe `KnowledgeUnit` e `ContextManifest` para selecionar somente conhecimento aplicável por fase, task, risco, sinais, tecnologia, capability e prefixo de path. A resolução é determinística, explica cada seleção, inclui dependências e falha em conflitos. A foundation começou com quatro sínteses de uso geral com proveniência fixa do ECC.
 
-Na v0.5, o catálogo totaliza doze unidades: oito unidades específicas cobrem reconnaissance, terminologia, entry points/flows, padrões similares, contratos/consumidores, testes, disciplina de evidência e stop/defer. O `ContextManifest` do artefato registra exatamente quais unidades foram selecionadas e por quê.
+O catálogo totaliza dezenove unidades. Além das oito unidades de Exploration, a v0.6 acrescenta sete unidades focadas em disciplina de implementação, scope, TDD contextual, verification, diagnóstico de falhas, recovery limitado e evidência de mudanças. O `ContextManifest` registra exatamente quais unidades foram selecionadas e por quê.
 
 O Plan ID identifica a intenção inicial. Enrichment não sobrescreve o plano base: critérios de aceite e contexto descoberto são persistidos como `EngineeringPlanRevision` encadeada e create-only.
 
@@ -90,12 +90,38 @@ Sem `--dry-run`, artifacts imutáveis são criados somente após preflight de co
 
 `explore` não executa scripts, testes, builds ou código do target; não implementa a feature; não usa LLM; e não depende do Codex. O adapter Codex é apenas a primeira superfície de consumo. `--dry-run` produz o mesmo contexto e revisão proposta sem gravar artifacts.
 
+## Execute (Guided Execution)
+
+```bash
+azevedo execute . --revision plan-revision-1-12345678 --prepare --dry-run
+azevedo execute . --revision plan-revision-1-12345678 --prepare --json
+azevedo execute ./isolated-worktree --revision plan-revision-1-12345678 --prepare --authorize-isolated-write
+```
+
+Na v0.6, `execute` aceita uma `EngineeringPlanRevision`, pois ela é o primeiro artifact que reúne intenção original, Specification, Exploration, acceptance criteria, scope enriquecido, risco e Verification Plan. O único modo público é `--prepare`: ele avalia `ready | blocked`, produz um `ExecutionContext` compacto e abre uma `ExecutionSession`, mas nunca chama um modelo nem modifica source code.
+
+`--authorize-isolated-write` somente registra a boundary que um coding agent poderá consumir depois. Readiness para mutação exige linked worktree, source revision inalterada, ausência de trabalho humano fora dos arquivos do harness, critérios de aceite, scope suficiente, verification obrigatória disponível e nenhuma decisão de produto aberta. Sem essa autorização, o contexto é read-only e a razão `write-not-authorized` permanece explícita.
+
+O contexto contém instruções estruturadas (`INTENT`, `EVIDENCE`, `ACCEPTANCE CRITERIA`, `SCOPE`, `KNOWN PATTERNS`, `RISKS`, `UNKNOWN TECHNICAL QUESTIONS`, `IMPLEMENTATION CONSTRAINTS`, `VERIFICATION`, `STOP CONDITIONS`). O budget padrão é 6.000 tokens estimados; conteúdo opcional é removido por prioridade e permanece referenciado.
+
+Sem `--dry-run`, apenas artifacts do harness são gravados de forma create-only:
+
+```text
+.azevedo/executions/preparations/<preparation-id>.json
+.azevedo/executions/<execution-id>/context.json
+.azevedo/executions/<execution-id>/sessions/<snapshot-id>.json
+```
+
+O core expõe uma interface provider-neutral `CodingAgent`, mas não inclui integração programática com Codex ou outro provider. Tentativas e snapshots são append-only, recovery é limitado a três attempts, scope adicional exige razão e evidence ids, e completion exige checkpoint final, attempt bem-sucedido, verification obrigatória aprovada e todos os critérios em estado `verified`.
+
+O Verification Runtime executa somente scripts encontrados pela inspection, com argumentos fixos e `shell: false`. Targets desconhecidos, indisponíveis ou comandos destrutivos são bloqueados. Values de secrets nunca pertencem aos artifacts; somente nomes de environment variables são permitidos.
+
 Exit codes:
 
 | Código | Significado |
 | --- | --- |
-| `0` | Inspection, initialization, planning ou exploration concluído; também dry-run válido |
-| `1` | Erro operacional ou conflito que bloqueia init/plan/explore |
+| `0` | Operação concluída; em `execute`, readiness está `ready` |
+| `1` | Erro operacional, conflito ou execution readiness `blocked` |
 | `2` | Comando, opção ou argumento inválido |
 
 ## Desenvolvimento local
@@ -108,11 +134,12 @@ node dist/src/cli.js inspect --json
 node dist/src/cli.js init . --dry-run
 node dist/src/cli.js plan . --task "Atualizar documentação"
 node dist/src/cli.js explore . --plan <plan-id> --dry-run
+node dist/src/cli.js execute . --revision <revision-id> --prepare --dry-run
 pnpm verify
 ```
 
-O package expõe o bin `azevedo`, preparando execução futura via `npx @azevedo/engineering inspect`, `init`, `plan` e `explore`. A publicação no NPM ainda não faz parte desta versão.
+O package expõe o bin `azevedo`, preparando uso futuro via `npx @azevedo/engineering inspect`, `init`, `plan`, `explore` e `execute`. A publicação no NPM ainda não faz parte desta versão.
 
-Esta versão também mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Implementação, execution/verification runtime, update, plugin, hooks, MCP e LLM ainda não foram implementados.
+Esta versão mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Ela prepara e registra Guided Execution, mas não implementa loop autônomo, provider API, commit/push, reviewer/security runtime, update, plugin, hooks, MCP, memory ou learning.
 
 Consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para os limites e decisões do projeto.
