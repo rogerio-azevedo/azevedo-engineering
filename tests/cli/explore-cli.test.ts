@@ -149,7 +149,7 @@ test("execute CLI prepares deterministic context in dry-run without mutating sou
   const revisionId = (JSON.parse(explored.stdout) as { revision: { id: string } }).revision.id;
   const before = snapshot(root);
   const execution = runCli("execute", root, "--revision", revisionId, "--prepare", "--dry-run", "--json");
-  assert.equal(execution.status, 1, execution.stderr);
+  assert.equal(execution.status, 0, execution.stderr);
   assert.equal(snapshot(root), before);
   const report = JSON.parse(execution.stdout) as {
     preparation: { readiness: { status: string; reasons: Array<{ code: string }> }; contextId: string | null };
@@ -158,11 +158,12 @@ test("execute CLI prepares deterministic context in dry-run without mutating sou
     dryRun: boolean;
   };
   assert.equal(report.dryRun, true);
-  assert.equal(report.preparation.readiness.status, "blocked");
-  assert.ok(report.preparation.readiness.reasons.some((reason) => reason.code === "write-not-authorized"));
-  assert.ok(report.preparation.contextId);
-  assert.equal(report.context?.permissions.sourceWrite, "denied");
-  assert.ok(report.context?.knowledgeManifest.selected.some((item) => item.id === "knowledge.execution.scope-control"));
+  assert.equal(report.preparation.readiness.status, "ready");
+  assert.equal(report.preparation.contextId, null);
+  assert.equal(report.context, null);
+  assert.deepEqual(report.preparation.readiness.reasons, []);
+  assert.equal((report.preparation as { mutationAuthorized?: boolean }).mutationAuthorized, false);
   assert.ok(report.operations.every((operation) => operation.action === "create"));
   assert.ok(report.operations.every((operation) => operation.artifact.startsWith(".azevedo/executions/")));
+  assert.equal(report.operations.length, 1);
 });

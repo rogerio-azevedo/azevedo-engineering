@@ -45,6 +45,29 @@ export const ExplorationStopReasonSchema = z.enum([
   "budget-exhausted",
 ]);
 
+export const FeatureExplorationModeSchema = z.enum([
+  "existing-feature",
+  "greenfield-feature",
+  "uncertain",
+]);
+
+export const RelevanceBasisSchema = z.enum([
+  "direct-symbol",
+  "import-flow",
+  "contract-relationship",
+  "consumer-relationship",
+  "architectural-pattern",
+  "capability-match",
+  "acceptance-criterion-match",
+  "domain-relationship",
+]);
+
+export const CandidateBasisSchema = z.enum([
+  "lexical-match",
+  "structural-match",
+  "capability-match",
+]);
+
 export const ExplorationArtifactSchema = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal("exploration-artifact"),
@@ -57,12 +80,20 @@ export const ExplorationArtifactSchema = z.object({
     technologies: z.array(z.string().min(1)),
     packages: z.array(z.union([z.literal("."), ProjectRelativePathSchema])),
   }).strict(),
+  featureMode: FeatureExplorationModeSchema,
   contextManifest: ContextManifestSchema,
   budget: z.object({
     maxFilesInspected: z.number().int().positive(),
     filesInventoried: z.number().int().nonnegative(),
     filesInspected: z.number().int().nonnegative(),
     exhausted: z.boolean(),
+    passes: z.array(z.object({
+      phase: z.enum(["reconnaissance", "targeted", "resolution"]),
+      allowance: z.number().int().nonnegative(),
+      consumed: z.number().int().nonnegative(),
+      reason: z.string().min(1),
+      prioritizedRegions: z.array(ProjectRelativePathSchema),
+    }).strict()).min(1),
   }).strict(),
   terminology: z.array(z.object({
     specificationTerm: z.string().min(1),
@@ -89,9 +120,32 @@ export const ExplorationArtifactSchema = z.object({
     differences: z.array(z.string().min(1)).min(1),
     evidenceIds: EvidenceBackedSchema.shape.evidenceIds,
   }).strict()),
+  candidates: z.array(z.object({
+    path: ProjectRelativePathSchema,
+    reason: z.string().min(1),
+    basis: CandidateBasisSchema,
+    acceptanceCriterionIds: z.array(z.string().regex(/^ac-[a-z0-9]+(?:-[a-z0-9]+)*$/)),
+    evidenceIds: EvidenceBackedSchema.shape.evidenceIds,
+  }).strict()),
+  integrationSurfaces: z.array(z.object({
+    id: z.string().regex(/^surface-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{8}$/),
+    capability: z.string().regex(/^[a-z][a-z0-9-]*$/),
+    description: z.string().min(1),
+    basis: z.enum(["capability-match", "acceptance-criterion-match", "architectural-pattern"]),
+    candidatePaths: z.array(z.object({
+      path: ProjectRelativePathSchema,
+      role: z.string().min(1),
+      evidenceIds: EvidenceBackedSchema.shape.evidenceIds,
+    }).strict()).min(1),
+    acceptanceCriterionIds: z.array(z.string().regex(/^ac-[a-z0-9]+(?:-[a-z0-9]+)*$/)).min(1),
+    evidenceIds: EvidenceBackedSchema.shape.evidenceIds,
+  }).strict()),
   affectedPaths: z.array(z.object({
     path: ProjectRelativePathSchema,
     confidence: z.enum(["confirmed", "likely", "supporting"]),
+    kind: z.enum(["existing", "proposed"]).default("existing"),
+    basis: RelevanceBasisSchema.default("direct-symbol"),
+    acceptanceCriterionIds: z.array(z.string().regex(/^ac-[a-z0-9]+(?:-[a-z0-9]+)*$/)).default([]),
     reason: z.string().min(1),
     evidenceIds: EvidenceBackedSchema.shape.evidenceIds,
   }).strict()),
@@ -103,7 +157,10 @@ export const ExplorationArtifactSchema = z.object({
   }).strict()),
   tests: z.array(z.object({
     path: ProjectRelativePathSchema.nullable(),
-    state: z.enum(["direct", "similar", "capability-without-coverage", "capability-unavailable"]),
+    state: z.enum([
+      "direct", "analogous", "infrastructure", "candidate",
+      "similar", "capability-without-coverage", "capability-unavailable",
+    ]),
     reason: z.string().min(1),
     evidenceIds: z.array(z.string().regex(/^evidence-[a-f0-9]{12}$/)),
   }).strict()),
@@ -161,6 +218,12 @@ export const ExplorationArtifactSchema = z.object({
   collect(artifact.entryPoints, "entryPoints");
   collect(artifact.flows, "flows");
   collect(artifact.similarImplementations, "similarImplementations");
+  collect(artifact.candidates, "candidates");
+  collect(artifact.integrationSurfaces, "integrationSurfaces");
+  artifact.integrationSurfaces.forEach((surface, index) => collect(
+    surface.candidatePaths,
+    `integrationSurfaces.${index}.candidatePaths`,
+  ));
   collect(artifact.affectedPaths, "affectedPaths");
   collect(artifact.contracts, "contracts");
   collect(artifact.tests, "tests");
@@ -198,6 +261,20 @@ export const ExplorationArtifactSchema = z.object({
   });
   if (artifact.budget.exhausted && artifact.budget.filesInspected !== artifact.budget.maxFilesInspected) context.addIssue({
     code: "custom", path: ["budget", "exhausted"], message: "An exhausted budget must have consumed the declared file limit.",
+  });
+  const passConsumption = artifact.budget.passes.reduce((total, pass) => total + pass.consumed, 0);
+  if (passConsumption !== artifact.budget.filesInspected) context.addIssue({
+    code: "custom", path: ["budget", "passes"], message: "Exploration pass consumption must equal filesInspected.",
+  });
+  for (const [index, pass] of artifact.budget.passes.entries()) if (pass.consumed > pass.allowance) context.addIssue({
+    code: "custom", path: ["budget", "passes", index, "consumed"], message: "Exploration pass exceeded its allowance.",
+  });
+  const candidatePaths = new Set(artifact.candidates.map((candidate) => candidate.path));
+  for (const [index, path] of artifact.affectedPaths.entries()) if (candidatePaths.has(path.path)) context.addIssue({
+    code: "custom", path: ["affectedPaths", index, "path"], message: "A lexical or structural candidate cannot also authorize source mutation.",
+  });
+  if (artifact.featureMode === "greenfield-feature" && artifact.status === "ready" && artifact.integrationSurfaces.length === 0) context.addIssue({
+    code: "custom", path: ["integrationSurfaces"], message: "Ready greenfield exploration requires evidence-backed integration surfaces.",
   });
 });
 

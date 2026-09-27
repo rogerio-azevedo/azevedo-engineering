@@ -251,7 +251,10 @@ test("a project without test capability gets no invented test command", () => {
   assert.equal(result.status, 0, result.stderr);
   const plan = parsePlanResult(result).plan;
   assert.equal(plan.steps.some((step) => step.kind === "test"), false);
-  assert.equal(plan.verification.some((item) => item.verifierId === "verify.test"), false);
+  const unavailableTest = plan.verification.find((item) => item.verifierId === "verify.test");
+  assert.equal(unavailableTest?.available, false);
+  assert.equal(unavailableTest?.required, false);
+  assert.equal(unavailableTest?.script, null);
   assert.ok(plan.understanding.unknowns.includes("No test command was detected by inspection."));
 });
 

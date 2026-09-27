@@ -30,6 +30,7 @@ export const ExecutionReadinessSchema = z.object({
       "acceptance-missing",
       "exploration-blocked",
       "scope-insufficient",
+      "scope-quality-insufficient",
       "product-decision-open",
       "external-dependency-blocked",
       "source-revision-changed",
@@ -37,6 +38,7 @@ export const ExecutionReadinessSchema = z.object({
       "dirty-human-work",
       "write-not-authorized",
       "isolation-required",
+      "context-budget-insufficient",
     ]),
     message: z.string().min(1),
     blocking: z.boolean(),
@@ -72,6 +74,7 @@ export const ProjectCheckpointSchema = z.object({
 export const ExecutionPermissionSchema = z.object({
   sourceWrite: z.enum(["denied", "isolated-worktree-only"]),
   allowedPaths: z.array(ProjectRelativePathSchema),
+  excludedCandidatePaths: z.array(ProjectRelativePathSchema),
   requiredEnvironmentVariables: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/)),
   allowNetwork: z.boolean(),
   allowCommit: z.literal(false),
@@ -86,6 +89,17 @@ const EvidenceReferenceSchema = z.object({
   reason: z.string().min(1),
 }).strict();
 
+export const ContextBudgetSchema = z.object({
+  defaultEstimatedTokens: z.number().int().positive(),
+  requestedEstimatedTokens: z.number().int().positive().nullable(),
+  requiredCoreEstimatedTokens: z.number().int().nonnegative(),
+  maxEstimatedTokens: z.number().int().positive(),
+  estimatedTokens: z.number().int().nonnegative(),
+  selectionReason: z.enum(["default", "explicit", "required-core-auto-expansion"]),
+  truncated: z.boolean(),
+  omittedReferences: z.array(PortableReferenceSchema),
+}).strict();
+
 export const ExecutionContextSchema = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal("execution-context"),
@@ -97,6 +111,8 @@ export const ExecutionContextSchema = z.object({
   intent: z.object({
     title: z.string().min(1),
     objective: z.string().min(1),
+    businessRules: z.array(z.string().min(1)),
+    decisions: z.array(z.string().min(1)),
     constraints: z.array(z.string().min(1)),
     outOfScope: z.array(z.string().min(1)),
   }).strict(),
@@ -104,6 +120,11 @@ export const ExecutionContextSchema = z.object({
   scope: z.object({
     initialPaths: z.array(ProjectRelativePathSchema).min(1),
     entryPoints: z.array(ProjectRelativePathSchema),
+    integrationSurfaces: z.array(z.object({
+      capability: z.string().min(1),
+      candidatePaths: z.array(ProjectRelativePathSchema).min(1),
+      acceptanceCriterionIds: z.array(PersistedAcceptanceCriterionSchema.shape.id).min(1),
+    }).strict()),
     contracts: z.array(ProjectRelativePathSchema),
     testPaths: z.array(ProjectRelativePathSchema),
     flows: z.array(z.object({
@@ -125,11 +146,7 @@ export const ExecutionContextSchema = z.object({
   evidence: z.array(EvidenceReferenceSchema),
   permissions: ExecutionPermissionSchema,
   stopConditions: z.array(z.string().min(1)).min(1),
-  budget: z.object({
-    maxEstimatedTokens: z.number().int().positive(),
-    estimatedTokens: z.number().int().nonnegative(),
-    truncated: z.boolean(),
-  }).strict(),
+  budget: ContextBudgetSchema,
 }).strict();
 
 export const ScopeExpansionSchema = z.object({
@@ -251,6 +268,14 @@ export const ExecutionPreparationSchema = z.object({
   id: z.string().regex(/^preparation-[a-f0-9]{12}$/),
   mode: z.literal("prepare"),
   writeAuthorized: z.boolean(),
+  mutationAuthorized: z.boolean(),
+  authorizationReasons: z.array(z.enum([
+    "readiness-blocked",
+    "write-not-authorized",
+    "isolation-required",
+    "checkpoint-not-captured",
+  ])),
+  contextBudget: ContextBudgetSchema,
   readiness: ExecutionReadinessSchema,
   contextId: ExecutionContextSchema.shape.id.nullable(),
   sessionId: ExecutionSessionSchema.shape.id.nullable(),

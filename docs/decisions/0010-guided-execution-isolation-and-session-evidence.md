@@ -9,7 +9,7 @@ A v0.5 termina com uma Specification, Exploration e Plan Revision baseadas em ev
 
 ## Decisão
 
-`EngineeringPlanRevision` é o ponto de entrada de Guided Execution. Antes de mutação, `ExecutionReadiness` valida artifacts, acceptance, scope, verification, source revision, product decisions, dirty state, isolamento e autorização. Product decisions abertas bloqueiam; technical unknowns pesquisáveis são levadas ao contexto.
+`EngineeringPlanRevision` é o ponto de entrada de Guided Execution. Antes de mutação, `ExecutionReadiness` valida artifacts, acceptance, scope, verification, source revision, product decisions e dirty state. Product decisions abertas bloqueiam; technical unknowns pesquisáveis são levadas ao contexto. A v0.6.1 esclarece em [ADR-0011](0011-greenfield-exploration-and-coordinated-readiness.md) que isolamento e autorização pertencem à fase posterior de mutation authorization, não ao readiness read-only.
 
 Preparation e mutation são boundaries distintas. `azevedo execute --revision ... --prepare` pode produzir artifacts do harness, mas nunca altera source. Permissão de escrita é explícita, limitada a linked worktree, paths autorizados e expansões com evidence. Commit e push são proibidos.
 

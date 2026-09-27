@@ -149,7 +149,7 @@ Options:
   --revision                  Required immutable plan revision id
   --prepare                   Required read/prepare mode; source code is never mutated
   --authorize-isolated-write  Record explicit permission for a later agent in a linked worktree
-  --context-budget            Maximum estimated context tokens (default: 6000)
+  --context-budget            Explicit maximum context tokens; omitted uses 6000 or expands to preserve required core
   --dry-run                   Evaluate and show artifacts without writing even harness state
   --json                      Output machine-readable JSON
   --help                      Show help
@@ -179,7 +179,7 @@ type ExecuteArguments = InspectArguments & {
   revisionId: string | undefined;
   prepare: boolean;
   authorizeIsolatedWrite: boolean;
-  contextBudget: number;
+  contextBudget: number | undefined;
   dryRun: boolean;
 };
 
@@ -310,7 +310,7 @@ function parseExecuteArguments(args: readonly string[]): ExecuteArguments {
   let authorizeIsolatedWrite = false;
   let projectPath: string | undefined;
   let revisionId: string | undefined;
-  let contextBudget = 6_000;
+  let contextBudget: number | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--help" || argument === "-h") help = true;
@@ -325,10 +325,11 @@ function parseExecuteArguments(args: readonly string[]): ExecuteArguments {
         if (revisionId) throw new CliError("Option --revision may only be provided once.", EXIT_INVALID_USAGE);
         revisionId = value;
       } else {
-        contextBudget = Number(value);
-        if (!Number.isInteger(contextBudget) || contextBudget < 500) {
+        const parsedBudget = Number(value);
+        if (!Number.isInteger(parsedBudget) || parsedBudget < 500) {
           throw new CliError("Option --context-budget must be an integer of at least 500.", EXIT_INVALID_USAGE);
         }
+        contextBudget = parsedBudget;
       }
       index += 1;
     } else if (argument?.startsWith("-")) throw new CliError(`Unknown option: ${argument}`, EXIT_INVALID_USAGE);
@@ -350,6 +351,8 @@ function renderExecutionPreparation(result: ReturnType<typeof prepareExecution>,
     `  Status: ${readiness.status}`,
     `  Mode: ${dryRun ? "dry-run" : "persist harness artifacts only"}`,
     `  Write authorization: ${result.preparation.writeAuthorized ? "isolated-worktree-only" : "denied"}`,
+    `  Mutation authorization: ${result.preparation.mutationAuthorized ? "granted" : `denied (${result.preparation.authorizationReasons.join(", ") || "none"})`}`,
+    `  Context budget: ${result.preparation.contextBudget.estimatedTokens}/${result.preparation.contextBudget.maxEstimatedTokens} (${result.preparation.contextBudget.selectionReason}; core ${result.preparation.contextBudget.requiredCoreEstimatedTokens})`,
     `  Context: ${result.preparation.contextId ?? "not produced"}`,
     `  Session: ${result.preparation.sessionId ?? "not produced"}`,
     "  Reasons:",
@@ -571,7 +574,7 @@ export function runCli(
           executionSequence: nextExecutionSequence(root),
           writeAuthorized: executeArguments.authorizeIsolatedWrite,
           requireIsolation: true,
-          maxContextTokens: executeArguments.contextBudget,
+          ...(executeArguments.contextBudget === undefined ? {} : { maxContextTokens: executeArguments.contextBudget }),
         });
         const operations = buildExecutionArtifactOperations(root, result.preparation, result.context, result.session);
         if (!executeArguments.dryRun) applyExecutionArtifactOperations(root, operations);

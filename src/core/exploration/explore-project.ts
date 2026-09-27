@@ -76,7 +76,87 @@ const ENTRY_PATTERNS: Array<[RegExp, ExplorationArtifact["entryPoints"][number][
 
 type RiskSignal = EngineeringPlan["risk"]["signals"][number];
 type RiskClass = EngineeringPlan["risk"]["class"];
-type FileRecord = { path: string; content: string; pathScore: number; contentScore: number };
+type FileRecord = {
+  path: string;
+  content: string;
+  pathScore: number;
+  contentScore: number;
+  capabilityScore: number;
+};
+
+type CapabilityDescriptor = {
+  id: string;
+  description: string;
+  requirement: RegExp;
+  path: RegExp;
+  role: string;
+};
+
+const CAPABILITY_DESCRIPTORS: readonly CapabilityDescriptor[] = [
+  {
+    id: "persistence",
+    description: "Domain state, identifiers, lifecycle transitions, repositories, and durable records.",
+    requirement: /persist|banco|database|schema|repository|repositorio|registro|identificador|estado|status|codigo|código|colis|retirad|cancelad|derivad/i,
+    path: /(?:^|\/)(?:repositories?|database|prisma|migrations?)(?=$|[\/._-])|(?:^|\/)(?:application|domain)\/(?:entities?|models?)(?=$|\/)|schema\.prisma$/i,
+    role: "persistence or domain-model pattern",
+  },
+  {
+    id: "api-boundary",
+    description: "Public controller, resolver, route, DTO, schema, or view-model boundary.",
+    requirement: /\bapi\b|backend|endpoint|resolver|controller|route|dto|contrato|contract|entrada|saída|input|output/i,
+    path: /(?:^|\/)(?:controllers?|resolvers?|routes?|dtos?|schemas?|view-models?)(?=$|[\/._-])|\.(?:graphql|gql)$/i,
+    role: "public contract or transport boundary",
+  },
+  {
+    id: "address-data",
+    description: "Existing condominium, block, unit, address, and resident data.",
+    requirement: /condom[ií]nio|condominium|bloco|block|unidade|unit|unity|endere[cç]o|address|morador|resident/i,
+    path: /(?:^|[\/._-])(?:condo|condominium|blocks?|units?|unities|address|resident)(?=$|[\/._-])/i,
+    role: "existing condominium address-data capability",
+  },
+  {
+    id: "identity-authorization",
+    description: "Current-user context, authorization, permission, guard, policy, or capability checks.",
+    requirement: /usu[aá]rio|user|autoriza|permission|permiss[aã]o|capabilit|guard|policy|perfil|profile/i,
+    path: /(?:^|[\/._-])(?:auth|authorization|permissions?|guards?|polic(?:y|ies)|abilities|person-context|current-user|profiles?|features?[-_]?slugs?)(?=$|[\/._-])/i,
+    role: "identity or authorization pattern",
+  },
+  {
+    id: "file-storage",
+    description: "File selection, upload, image handling, attachments, and durable storage.",
+    requirement: /foto|photo|imagem|image|c[aâ]mera|camera|upload|storage|arquivo|file|anexo|attachment/i,
+    path: /(?:^|[\/._-])(?:uploads?|storage|files?|images?|photos?|camera|attachments?|anexos?|s3|bucket)(?=$|[\/._-])/i,
+    role: "file upload or storage capability",
+  },
+  {
+    id: "email-delivery",
+    description: "Outbound e-mail, notification delivery, provider result, and retry behavior.",
+    requirement: /e-?mail|notifica|comunica|delivery|entregue|provider|retry|destinat[aá]rio|recipient/i,
+    path: /(?:^|[\/._-])(?:mail|email|notifications?|delivery|retry|messages?)(?=$|[\/._-])/i,
+    role: "outbound communication capability",
+  },
+  {
+    id: "audit-history",
+    description: "Event, audit, history, logging, and traceability patterns.",
+    requirement: /auditor|hist[oó]r|evento|event|rastre|trilha|log|timeline|passado/i,
+    path: /(?:^|[\/._-])(?:audit|history|events?|logs?|timeline|tracking)(?=$|[\/._-])/i,
+    role: "audit or append-only history pattern",
+  },
+  {
+    id: "query-listing",
+    description: "Operational listing, search, filtering, ordering, and pagination.",
+    requirement: /list|consulta|pesquis|busca|search|filtro|filter|pagina|query|orden|prioriza/i,
+    path: /(?:^|[\/._-])(?:list|listing|search|filters?|queries|query|pagination|tables?|grids?)(?=$|[\/._-])/i,
+    role: "listing or query interaction pattern",
+  },
+  {
+    id: "web-ui",
+    description: "Web page, mobile-first form, modal, component, and user interaction patterns.",
+    requirement: /mobile|web|interface|tela|formul[aá]rio|form|modal|componente|component|next\.js|toque|browser/i,
+    path: /(?:^|\/)(?:app|pages?|components?|forms?|modals?)(?=\/|$)|(?:^|\/)page\.[mc]?[jt]sx?$/i,
+    role: "web interaction or form pattern",
+  },
+];
 
 export type ExploreProjectOptions = {
   maxFilesInspected?: number;
@@ -156,8 +236,230 @@ function pathScore(path: string, terms: readonly string[]): number {
   const normalized = normalizeText(path);
   return terms.reduce((score, term) => score + (normalized.includes(term) ? 4 : 0), 0)
     + (ENTRY_PATTERNS.some(([pattern]) => pattern.test(path)) ? 1 : 0)
-    + (STRUCTURAL_FILES.has(posix.basename(path)) ? 1 : 0)
+    + (isStructuralFile(path) ? 1 : 0)
     + (/\.(?:test|spec|e2e-spec)\.[mc]?[jt]sx?$/i.test(path) ? 1 : 0);
+}
+
+function capabilityPathScore(path: string, capabilities: readonly CapabilityDescriptor[]): number {
+  return capabilities.reduce((score, capability) => score + capabilityEvidenceScore(capability, path), 0);
+}
+
+function isStructuralFile(path: string): boolean {
+  const basename = posix.basename(path);
+  return STRUCTURAL_FILES.has(basename) ||
+    /(?:^|\/)(?:[^/]+\.)?module\.[mc]?[jt]s$/i.test(path) ||
+    /(?:^|\/)codegen\.[mc]?[jt]s$/i.test(path);
+}
+
+function capabilityEvidenceScore(capability: CapabilityDescriptor, path: string): number {
+  const normalized = normalizeText(path);
+  let score = capability.path.test(path) ? 1 : 0;
+  if (capability.id === "web-ui" && /(?:^|[\/._-])(?:form|modal|page)(?:s)?(?=$|[\/._-])/.test(normalized)) score += 8;
+  if (capability.id === "persistence" && /(?:repositories?|database|prisma|migrations?|schema\.prisma)/.test(normalized)) score += 8;
+  if (capability.id === "api-boundary" && /(?:resolvers?|controllers?|routes?|dtos?|\.graphql$|\.gql$)/.test(normalized)) score += 8;
+  if (capability.id === "address-data" && /(?:blocks?|units?|unities|address|resident)/.test(normalized)) score += 8;
+  if (capability.id === "identity-authorization" && /features?[-_]?slugs?/.test(normalized)) score += 16;
+  else if (capability.id === "identity-authorization" && /(?:auth|permissions?|guards?|polic(?:y|ies)|abilities|current-user)/.test(normalized)) score += 8;
+  if (capability.id === "email-delivery" && /(?:mail|email|delivery|retry)/.test(normalized)) score += 12;
+  else if (capability.id === "email-delivery" && /notifications?/.test(normalized)) score += 2;
+  if (capability.id === "file-storage" && /(?:upload|storage|files?|images?|photos?|attachments?)/.test(normalized)) score += 8;
+  if (capability.id === "audit-history" && /(?:audit|history|events?|logs?|timeline)/.test(normalized)) score += 8;
+  if (capability.id === "query-listing" && /(?:list|search|filters?|queries|pagination)/.test(normalized)) score += 8;
+  return score;
+}
+
+function hasCapabilityEvidence(capability: CapabilityDescriptor, record: FileRecord): boolean {
+  if (!capability.path.test(record.path)) return false;
+  const path = normalizeText(record.path);
+  const content = normalizeText(record.content);
+  switch (capability.id) {
+    case "persistence":
+      return /(?:schema\.prisma|migrations?\/|\.sql$)/.test(path) ||
+        /(?:repositories?|database|prisma|drizzle|mongoose)/.test(path) &&
+          /(?:repository|prisma|drizzle|mongoose|findmany|findunique|create|save|update|model\s)/.test(content) ||
+        /(?:application|domain)\/(?:entities?|models?)\//.test(path) && /(?:class|interface|type|aggregate|entity)/.test(content);
+    case "api-boundary":
+      return /\.(?:graphql|gql)$/.test(path) && /\b(?:query|mutation|fragment)\b/.test(content) ||
+        /(?:controllers?|resolvers?|routes?|dtos?|view-models?)(?:\/|[._-])/.test(path) &&
+          /(?:@controller|@resolver|@query|@mutation|@inputtype|@objecttype|class|interface|type)/.test(content);
+    case "address-data":
+      return /(?:^|[\/._-])(?:blocks?|units?|unities|address|resident)(?=$|[\/._-])/.test(path) &&
+        /(?:condo|condominium|block|unit|unity|address|resident)/.test(content);
+    case "identity-authorization":
+      return /(?:auth|permissions?|guards?|polic(?:y|ies)|abilities|current-user|features?[-_]?slugs?)/.test(path) &&
+        /(?:permission|authorize|authorization|guard|policy|ability|currentuser|current-user|feature.*slug|auth)/.test(content);
+    case "file-storage":
+      return /(?:upload|storage|files?|images?|photos?|camera|attachments?|s3|bucket)/.test(path) &&
+        /(?:upload|storage|file|image|photo|camera|attachment|s3|bucket)/.test(content);
+    case "email-delivery":
+      return /(?:mail|email|delivery|retry)/.test(path) &&
+        /(?:send|recipient|subject|mailer|nodemailer|email|delivery|retry)/.test(content);
+    case "audit-history":
+      return /(?:audit|history|events?|logs?|timeline|tracking)/.test(path) &&
+        /(?:audit|history|event|log|timeline|tracking|created_at|updated_at)/.test(content);
+    case "query-listing":
+      return /(?:list|search|filters?|queries|query|pagination|tables?|grids?)/.test(path) &&
+        /(?:query|findmany|filter|search|pagination|table|list)/.test(content);
+    case "web-ui":
+      return /(?:^|\/)(?:app|pages?|components?|forms?|modals?)(?:\/|$)/.test(path) &&
+        /(?:jsx|tsx|react|function|=>|return\s*\(|<form|<div)/.test(`${path}\n${content}`);
+    default:
+      return false;
+  }
+}
+
+function criteriaForCapability(
+  specification: FeatureSpecification,
+  capability: CapabilityDescriptor,
+): string[] {
+  const matched = specification.acceptanceCriteria.filter((criterion) => capability.requirement.test([
+    criterion.statement,
+    criterion.scenario.given,
+    criterion.scenario.when,
+    criterion.scenario.then,
+    ...criterion.prohibitedEffects,
+  ].join(" "))).map((criterion) => criterion.id);
+  return matched;
+}
+
+function capabilityDescriptors(specification: FeatureSpecification): CapabilityDescriptor[] {
+  const text = sourceText(specification);
+  return CAPABILITY_DESCRIPTORS.filter((capability) => capability.requirement.test(text));
+}
+
+function pathRegion(path: string): string {
+  const segments = path.split("/");
+  if (segments[0] !== "src") return segments[0] ?? path;
+  if (segments[1] === "app" && segments.length >= 3) return segments.slice(0, 3).join("/");
+  return segments.slice(0, Math.min(4, segments.length - 1)).join("/") || path;
+}
+
+function representativeCapabilityRecords(records: readonly FileRecord[], limit: number): FileRecord[] {
+  const selected: FileRecord[] = [];
+  const regions = new Set<string>();
+  for (const record of records.filter((item) => isStructuralFile(item.path))) {
+    selected.push(record);
+    regions.add(pathRegion(record.path));
+    if (selected.length === limit) return selected;
+  }
+  for (const record of records) {
+    const region = pathRegion(record.path);
+    if (regions.has(region)) continue;
+    selected.push(record);
+    regions.add(region);
+    if (selected.length === limit) return selected;
+  }
+  for (const record of records) {
+    if (selected.includes(record)) continue;
+    selected.push(record);
+    if (selected.length === limit) break;
+  }
+  return selected;
+}
+
+function representativeCapabilityPaths(
+  paths: readonly string[],
+  capability: CapabilityDescriptor,
+  limit: number,
+): string[] {
+  const ranked = [...paths].sort((left, right) =>
+    capabilityEvidenceScore(capability, right) - capabilityEvidenceScore(capability, left) || left.localeCompare(right));
+  const selected: string[] = [];
+  const regions = new Set<string>();
+  for (const path of ranked) {
+    const region = pathRegion(path);
+    if (regions.has(region)) continue;
+    selected.push(path);
+    regions.add(region);
+    if (selected.length === limit) return selected;
+  }
+  for (const path of ranked) {
+    if (selected.includes(path)) continue;
+    selected.push(path);
+    if (selected.length === limit) break;
+  }
+  return selected;
+}
+
+function proposedBoundary(path: string): string | null {
+  const normalized = path.replaceAll("\\", "/");
+  if (/^prisma\/migrations\/[^/]+\//.test(normalized)) return "prisma/migrations";
+  if (normalized === "prisma/schema.prisma") return normalized;
+  if (/(?:^|\/)(?:[^/]+\.)?module\.[mc]?[jt]s$/i.test(normalized)) return normalized;
+  if (/(?:^|\/)(?:features?|permissions?|capabilit(?:y|ies))[-_]?(?:slugs?|types?|registry)\.[mc]?[jt]s$/i.test(normalized)) return normalized;
+  if (/^src\/graphql\/generated\.[mc]?[jt]sx?$/i.test(normalized)) return normalized;
+  const knownBoundaries = [
+    "src/application/entities",
+    "src/application/repositories",
+    "src/application/services",
+    "src/application/use-cases",
+    "src/infra/database/mappers",
+    "src/infra/database/repositories",
+    "src/infra/http/dtos",
+    "src/infra/http/resolvers",
+    "src/infra/http/view-models",
+    "src/infra/mail",
+    "src/infra/storage",
+    "src/mail",
+    "src/graphql/mutations",
+    "src/graphql/queries",
+    "src/app/(app)",
+    "src/components",
+  ];
+  return knownBoundaries.find((boundary) => normalized === boundary || normalized.startsWith(`${boundary}/`))
+    ?? null;
+}
+
+function isCompositionRoot(record: FileRecord): boolean {
+  return /(?:^|\/)(?:[^/]+\.)?module\.[mc]?[jt]s$/i.test(record.path) &&
+    /@Module\s*\(/.test(record.content) && /\b(?:providers|controllers|imports|exports)\s*:/.test(record.content);
+}
+
+function generatedOutputs(record: FileRecord, knownPaths: ReadonlySet<string>): string[] {
+  if (!/(?:^|\/)codegen\.[mc]?[jt]s$/i.test(record.path) || !/\bgenerates\s*:/.test(record.content)) return [];
+  return unique([...record.content.matchAll(/["']([^"']+\.[mc]?[jt]sx?)["']\s*:/g)]
+    .map((match) => match[1]!.replace(/^\.\//, ""))
+    .filter((path) => knownPaths.has(path)));
+}
+
+function surfaceId(capability: string, candidatePaths: readonly string[], criterionIds: readonly string[]): string {
+  const slug = capability.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const digest = createHash("sha256").update(JSON.stringify({ capability, candidatePaths, criterionIds })).digest("hex").slice(0, 8);
+  return `surface-${slug}-${digest}`;
+}
+
+function deriveGreenfieldScope(
+  surfaces: ExplorationArtifact["integrationSurfaces"],
+): ExplorationArtifact["affectedPaths"] {
+  const byBoundary = new Map<string, {
+    capabilities: Set<string>;
+    acceptanceCriterionIds: Set<string>;
+    evidenceIds: Set<string>;
+  }>();
+  for (const surface of surfaces) {
+    for (const candidate of surface.candidatePaths) {
+      const boundary = proposedBoundary(candidate.path);
+      if (boundary === null) continue;
+      const accumulated = byBoundary.get(boundary) ?? {
+        capabilities: new Set<string>(),
+        acceptanceCriterionIds: new Set<string>(),
+        evidenceIds: new Set<string>(),
+      };
+      accumulated.capabilities.add(surface.capability);
+      surface.acceptanceCriterionIds.forEach((id) => accumulated.acceptanceCriterionIds.add(id));
+      candidate.evidenceIds.forEach((id) => accumulated.evidenceIds.add(id));
+      byBoundary.set(boundary, accumulated);
+    }
+  }
+  return [...byBoundary.entries()].map(([path, accumulated]) => ({
+    path,
+    confidence: "likely" as const,
+    kind: "proposed" as const,
+    basis: "architectural-pattern" as const,
+    acceptanceCriterionIds: [...accumulated.acceptanceCriterionIds].sort(),
+    reason: `Proposed greenfield artifact boundary for ${[...accumulated.capabilities].sort().join(", ")}, derived from existing repository structure rather than lexical similarity.`,
+    evidenceIds: [...accumulated.evidenceIds].sort(),
+  })).sort((left, right) => left.path.localeCompare(right.path)).slice(0, 16);
 }
 
 function safeRead(root: string, path: string): string | null {
@@ -221,7 +523,8 @@ function entryKind(path: string, content: string): ExplorationArtifact["entryPoi
 }
 
 function evidenceKind(path: string): ExplorationEvidence["kind"] {
-  if (STRUCTURAL_FILES.has(posix.basename(path))) return "manifest";
+  if (/(?:^|\/)schema\.prisma$|(?:^|\/)drizzle\.config\.[mc]?[jt]s$/i.test(path)) return "configuration";
+  if (isStructuralFile(path)) return "manifest";
   if (/(?:^|\/)migrations?\//i.test(path) || /\.sql$/i.test(path)) return "configuration";
   if (/\.(?:test|spec|e2e-spec)\.[mc]?[jt]sx?$/i.test(path) || /(?:^|\/)tests?\//i.test(path)) return "test";
   if (/\.(?:graphql|gql)$|(?:^|\/)(?:dto|contracts?|types?|schemas?|view-models?)(?:\/|\.)/i.test(path)) return "contract";
@@ -276,18 +579,45 @@ function domainEntryDistance(path: string, terms: readonly string[]): number {
   return index < 0 ? Number.MAX_SAFE_INTEGER : segments.length - index - 1;
 }
 
+function explicitlyRequiredVerificationCapabilities(specification: FeatureSpecification): Set<"lint" | "typecheck" | "test" | "build"> {
+  const authoritativeText = [
+    ...specification.constraints,
+    ...specification.businessRules,
+    ...specification.decisions,
+    ...specification.acceptanceCriteria.flatMap((criterion) => [
+      criterion.statement,
+      criterion.scenario.given,
+      criterion.scenario.when,
+      criterion.scenario.then,
+      ...criterion.prohibitedEffects,
+    ]),
+  ].join(" ");
+  const required = new Set<"lint" | "typecheck" | "test" | "build">();
+  const obligation = "(?:must|shall|required|mandatory|obrigat[oó]ri[oa]|exige|deve ser)";
+  const patterns: Array<["lint" | "typecheck" | "test" | "build", string]> = [
+    ["lint", "(?:lint|eslint)"],
+    ["typecheck", "(?:typecheck|type check|checagem de tipos|verifica[cç][aã]o de tipos)"],
+    ["test", "(?:automated test|teste automatizado|test suite|su[ií]te de testes)"],
+    ["build", "(?:production build|build de produ[cç][aã]o|compila[cç][aã]o de produ[cç][aã]o)"],
+  ];
+  for (const [capability, expression] of patterns) {
+    if (new RegExp(`${obligation}[\\s\\S]{0,48}${expression}|${expression}[\\s\\S]{0,48}${obligation}`, "i").test(authoritativeText)) {
+      required.add(capability);
+    }
+  }
+  return required;
+}
+
 function revisionFor(
   inspection: ProjectInspectResult,
   plan: EngineeringPlan,
   specification: FeatureSpecification,
   artifact: ExplorationArtifact,
-): EngineeringPlanRevision | null {
-  if (artifact.status === "blocked" || artifact.affectedPaths.length === 0) return null;
+): EngineeringPlanRevision {
   const affectedPaths = artifact.affectedPaths
     .filter((item) => item.confidence !== "supporting")
     .map((item) => item.path)
     .sort();
-  if (affectedPaths.length === 0) return null;
   const classification = classifyTask({
     taskId: plan.id,
     title: plan.task.description,
@@ -329,7 +659,9 @@ function revisionFor(
       ]),
       unknowns: remainingUnknowns,
     },
-    verification: resolveVerificationPlan(inspection, classification),
+    verification: resolveVerificationPlan(inspection, classification, {
+      mandatoryCapabilities: explicitlyRequiredVerificationCapabilities(specification),
+    }),
     governance: {
       tdd: classification.tdd,
       architectReviewRequired: plan.governance.architectReviewRequired || classification.architectRequired,
@@ -353,7 +685,7 @@ function revisionFor(
     },
     acceptanceCriteria: specification.acceptanceCriteria,
     changeSummary: [
-      `Bounded exploration identified ${affectedPaths.length} affected paths with project-relative evidence.`,
+      `Bounded exploration identified ${affectedPaths.length} affected paths with project-relative evidence; status is ${artifact.status}.`,
       `Specification ${specification.id} remains the authority for supplied acceptance criteria.`,
       `Exploration stopped with ${artifact.stopReason}; ${remainingUnknowns.length} unknowns remain.`,
     ],
@@ -381,32 +713,106 @@ export function exploreProject(
   const knownPaths = new Set(inventory);
   const { seeds, expansions } = expandedTerms(specification);
   const allTerms = unique([...expansions.values()].flat());
-  const requestedActionGroups = ACTION_TERM_GROUPS.filter((group) => group.some((term) => seeds.includes(term)));
-  const requestedEntityGroups = ENTITY_TERM_GROUPS.filter((group) => group.some((term) => seeds.includes(term)));
-  const domainTerms = unique(requestedEntityGroups.flat());
-  const specificIntentTerms = unique([...expansions.entries()]
-    .filter(([seed]) => !requestedEntityGroups.some((group) => group.includes(seed)))
-    .flatMap(([, values]) => values)
-    .filter((term) => !GENERIC_INTENT_TERMS.has(term)));
-  const highSignalIntentTerms = specificIntentTerms.filter((term) => HIGH_SIGNAL_INTENT_TERMS.has(term));
-  const ranked = inventory.map((path) => ({ path, score: pathScore(path, allTerms) }))
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
-  const selectedPaths = ranked.slice(0, maxFilesInspected).map((candidate) => candidate.path);
-  const records = selectedPaths.flatMap((path): FileRecord[] => {
+  const capabilities = capabilityDescriptors(specification);
+  const genericFeatureTerms = new Set([...GENERIC_INTENT_TERMS, "controle", "control", "completo", "conforme", "specification", "produto"]);
+  const featureTerms = unique(tokens(specification.title).flatMap((term) => expansions.get(term) ?? [term])
+    .filter((term) => term.length >= 4 && !genericFeatureTerms.has(term)));
+
+  const rankedInventory = inventory.map((path) => ({
+    path,
+    lexical: pathScore(path, allTerms),
+    capability: capabilityPathScore(path, capabilities),
+    structural: isStructuralFile(path) ? 1 : 0,
+  })).sort((left, right) =>
+    (right.capability * 8 + right.lexical + right.structural * 4) -
+      (left.capability * 8 + left.lexical + left.structural * 4) || left.path.localeCompare(right.path),
+  );
+  const passOneAllowance = Math.min(maxFilesInspected, Math.max(10, Math.floor(maxFilesInspected * 0.25)));
+  const structuralPaths = rankedInventory.filter((item) => item.structural > 0).map((item) => item.path);
+  const perCapabilityAllowance = Math.max(2, Math.floor(
+    Math.max(0, passOneAllowance - Math.min(structuralPaths.length, Math.floor(passOneAllowance / 3))) /
+      Math.max(1, capabilities.length),
+  ));
+  const capabilityBalancedPaths = capabilities.flatMap((capability) => representativeCapabilityPaths(
+    inventory.filter((path) => capability.path.test(path)), capability, perCapabilityAllowance,
+  ));
+  const passOnePaths = unique([
+    ...structuralPaths,
+    ...capabilityBalancedPaths,
+    ...rankedInventory.filter((item) => item.capability > 0 || item.lexical > 0 || item.structural > 0)
+      .map((item) => item.path),
+  ]).slice(0, passOneAllowance);
+  const readRecords = (paths: readonly string[]): FileRecord[] => paths.flatMap((path): FileRecord[] => {
     const content = safeRead(root, path);
     if (content === null) return [];
-    return [{ path, content, pathScore: pathScore(path, allTerms), contentScore: contentScore(content, allTerms) }];
+    return [{
+      path,
+      content,
+      pathScore: pathScore(path, allTerms),
+      contentScore: contentScore(content, allTerms),
+      capabilityScore: capabilityPathScore(path, capabilities),
+    }];
   });
-  const relevant = records.filter((record) => record.pathScore >= 4 || record.contentScore > 0);
+  const passOneRecords = readRecords(passOnePaths);
+  const prioritizedRegions = unique(passOneRecords.filter((record) =>
+    record.capabilityScore > 0 || pathHasExactTerm(record.path, featureTerms),
+  ).map((record) => pathRegion(record.path))).slice(0, 16).sort();
+  const selected = new Set(passOnePaths);
+  const remainingAfterOne = rankedInventory.filter((item) => !selected.has(item.path)).map((item) => ({
+    ...item,
+    region: prioritizedRegions.some((region) => item.path === region || item.path.startsWith(`${region}/`)) ? 6 : 0,
+  })).sort((left, right) =>
+    (right.region + right.capability * 8 + right.lexical) - (left.region + left.capability * 8 + left.lexical) ||
+      left.path.localeCompare(right.path),
+  );
+  const passTwoAllowance = Math.min(maxFilesInspected - selected.size, Math.floor(maxFilesInspected * 0.55));
+  const passTwoPaths = remainingAfterOne.filter((item) => item.region > 0 || item.capability > 0 || item.lexical > 0)
+    .slice(0, passTwoAllowance).map((item) => item.path);
+  passTwoPaths.forEach((path) => selected.add(path));
+  const firstTwoRecords = [...passOneRecords, ...readRecords(passTwoPaths)];
+  const importedTargets = unique(firstTwoRecords.flatMap((record) => imports(record.content)
+    .map((specifier) => resolveInternalImport(record.path, specifier, knownPaths))
+    .filter((path): path is string => Boolean(path) && !selected.has(path!))));
+  const remainingAfterTwo = rankedInventory.filter((item) => !selected.has(item.path));
+  const passThreeAllowance = Math.max(0, maxFilesInspected - selected.size);
+  const passThreePaths = unique([
+    ...importedTargets,
+    ...remainingAfterTwo.filter((item) => item.capability > 0 || item.lexical > 0).map((item) => item.path),
+  ]).slice(0, passThreeAllowance);
+  passThreePaths.forEach((path) => selected.add(path));
+  const selectedPaths = [...selected];
+  const records = [...firstTwoRecords, ...readRecords(passThreePaths)];
+  const relevant = records.filter((record) =>
+    record.pathScore > 0 || record.contentScore > 0 || record.capabilityScore > 0 || isStructuralFile(record.path),
+  );
+  const prioritizedCandidateCount = rankedInventory.filter((item) => item.capability > 0 || item.lexical > 0 || item.structural > 0).length;
+  const exhausted = selectedPaths.length === maxFilesInspected && prioritizedCandidateCount > selectedPaths.length;
 
-  const evidence: ExplorationEvidence[] = relevant.map((record) => createEvidence(
-    record,
-    allTerms,
-    evidenceKind(record.path),
-    record.pathScore >= 4 ? "Repository path matches terminology derived from the specification." : "Repository content matches specification terminology.",
-    `Supports exploration of ${specification.title}.`,
-  ));
+  const directFeatureMatch = (record: FileRecord): boolean => {
+    if (featureTerms.length === 0) return false;
+    if (pathHasExactTerm(record.path, featureTerms)) return true;
+    const symbol = firstSymbol(record.content);
+    return Boolean(symbol && featureTerms.some((term) => normalizeText(symbol).includes(term)));
+  };
+  const evidence: ExplorationEvidence[] = relevant.map((record) => {
+    const direct = directFeatureMatch(record);
+    const capability = capabilities.find((item) => hasCapabilityEvidence(item, record));
+    const structural = isCompositionRoot(record) || generatedOutputs(record, knownPaths).length > 0;
+    return createEvidence(
+      record,
+      direct ? featureTerms : allTerms,
+      evidenceKind(record.path),
+      direct
+        ? "Repository path or symbol directly matches the feature domain."
+        : capability ? `Repository structure implements the ${capability.id} capability required by the specification.`
+          : structural ? "Repository configuration declares a composition or generated-contract boundary."
+          : "Lexical correspondence produced a candidate that requires structural corroboration.",
+      direct ? `Direct domain evidence for ${specification.title}.`
+        : capability ? `Architectural capability evidence for ${specification.title}.`
+          : structural ? `Architectural integration evidence for ${specification.title}.`
+          : `Candidate evidence for ${specification.title}.`,
+    );
+  });
   const evidenceByPath = new Map(evidence.map((item) => [item.path, item]));
 
   const terminology = [...expansions.entries()].flatMap(([seed, values]) => {
@@ -414,44 +820,17 @@ export function exploreProject(
     const repositoryTerms = matched.filter((term) => term !== seed);
     const evidenceIds = unique(relevant.filter((record) => matched.some((term) => normalizeText(`${record.path} ${record.content}`).includes(term)))
       .map((record) => evidenceByPath.get(record.path)?.id).filter((id): id is string => Boolean(id))).slice(0, 12);
-    return repositoryTerms.length > 0 && evidenceIds.length > 0
-      ? [{ specificationTerm: seed, repositoryTerms, evidenceIds }]
-      : [];
+    return repositoryTerms.length > 0 && evidenceIds.length > 0 ? [{ specificationTerm: seed, repositoryTerms, evidenceIds }] : [];
   }).sort((left, right) => left.specificationTerm.localeCompare(right.specificationTerm));
 
-  const filterRequested = TERM_GROUPS[3]!.some((term) => seeds.includes(term));
-  const statusRequested = TERM_GROUPS[5]!.some((term) => seeds.includes(term));
-  const filterStatusPattern = domainTerms.length > 0
-    ? new RegExp(`(?:${domainTerms.join("|")})\\.filter[\\s\\S]{0,320}(?:${domainTerms.join("|")})\\.status`, "i")
-    : null;
-  const actionMatch = (record: FileRecord): boolean => {
-    const normalized = normalizeText(`${record.path} ${record.content}`);
-    if (filterRequested && statusRequested && filterStatusPattern) return filterStatusPattern.test(normalized);
-    if (requestedActionGroups.length > 0) return requestedActionGroups.every((group) => group.some((term) => normalized.includes(term)));
-    const normalizedPath = normalizeText(record.path);
-    const terms = highSignalIntentTerms.length > 0 ? highSignalIntentTerms : specificIntentTerms;
-    const pathHits = terms.filter((term) => normalizedPath.includes(term)).length;
-    const contentHits = terms.filter((term) => normalizeText(record.content).includes(term)).length;
-    return pathHits >= 1 || contentHits >= (highSignalIntentTerms.length > 0 ? 2 : 3);
-  };
-  const domainPathMatch = (record: FileRecord): boolean => domainTerms.length === 0 || pathHasExactTerm(record.path, domainTerms);
-  const domainEvidenceMatch = (record: FileRecord): boolean => domainTerms.length === 0 || domainPathMatch(record) ||
-    domainTerms.some((term) => normalizeText(record.content).includes(term));
-  const actionCoverage = relevant.some((record) =>
-    !["documentation", "manifest", "configuration"].includes(evidenceKind(record.path)) &&
-    domainEvidenceMatch(record) && actionMatch(record));
-
-  const entryCandidates = relevant.flatMap((record) => {
+  const directRecords = relevant.filter((record) =>
+    !["documentation", "manifest", "configuration", "test"].includes(evidenceKind(record.path)) && directFeatureMatch(record),
+  );
+  const entryPoints = directRecords.flatMap((record) => {
     const kind = entryKind(record.path, record.content);
     const itemEvidence = evidenceByPath.get(record.path);
-    return kind && itemEvidence && (domainTerms.length > 0 ? domainPathMatch(record) : actionMatch(record))
-      ? [{ path: record.path, kind, symbol: itemEvidence.symbol, evidenceIds: [itemEvidence.id] }]
-      : [];
-  });
-  const minimumEntryDistance = Math.min(...entryCandidates.map((entry) => domainEntryDistance(entry.path, domainTerms)));
-  const entryPoints = entryCandidates
-    .filter((entry) => domainTerms.length === 0 || domainEntryDistance(entry.path, domainTerms) === minimumEntryDistance)
-    .sort((left, right) => left.path.localeCompare(right.path));
+    return kind && itemEvidence ? [{ path: record.path, kind, symbol: itemEvidence.symbol, evidenceIds: [itemEvidence.id] }] : [];
+  }).sort((left, right) => left.path.localeCompare(right.path));
 
   const relevantPaths = new Set(relevant.map((record) => record.path));
   const flows: ExplorationArtifact["flows"] = [];
@@ -466,11 +845,11 @@ export function exploreProject(
         dependency.usedBy.add(record.path);
         dependency.evidenceIds.add(fromEvidence.id);
         dependencies.set(internal, dependency);
-        if (relevantPaths.has(internal)) flows.push({
+        if (relevantPaths.has(internal) && evidenceByPath.has(internal)) flows.push({
           from: record.path,
           to: internal,
           relation: "imports",
-          evidenceIds: unique([fromEvidence.id, evidenceByPath.get(internal)?.id].filter((id): id is string => Boolean(id))),
+          evidenceIds: unique([fromEvidence.id, evidenceByPath.get(internal)!.id]),
         });
       } else if (!specifier.startsWith(".")) {
         const name = specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0] ?? specifier;
@@ -482,37 +861,99 @@ export function exploreProject(
     }
   }
 
-  const testRecords = relevant.filter((record) => evidenceKind(record.path) === "test");
-  const capability = inspection.capabilities.find((item) => item.id === "test");
-  const tests: ExplorationArtifact["tests"] = testRecords.length > 0
-    ? testRecords.map((record) => ({
-      path: record.path,
-      state: record.contentScore > 0 ? "direct" as const : "similar" as const,
-      reason: record.contentScore > 0 ? "Test content matches the explored terminology." : "Test is adjacent to the explored implementation pattern.",
-      evidenceIds: [evidenceByPath.get(record.path)!.id],
-    }))
-    : [{
-      path: null,
-      state: capability?.state === "detected" ? "capability-without-coverage" : "capability-unavailable",
-      reason: capability?.state === "detected"
-        ? "A test capability exists, but bounded exploration found no directly related test."
-        : "Project inspection did not detect an executable test capability.",
-      evidenceIds: [],
+  const baseIntegrationSurfaces: ExplorationArtifact["integrationSurfaces"] = capabilities.flatMap((capability) => {
+    const rankedMatches = relevant.filter((record) =>
+      !["documentation", "manifest", "test"].includes(evidenceKind(record.path)) && hasCapabilityEvidence(capability, record),
+    ).sort((left, right) =>
+      capabilityEvidenceScore(capability, right.path) - capabilityEvidenceScore(capability, left.path) ||
+      (right.capabilityScore + right.pathScore) - (left.capabilityScore + left.pathScore) || left.path.localeCompare(right.path),
+    );
+    const matches = representativeCapabilityRecords(rankedMatches, 8);
+    const candidatePaths = matches.flatMap((record) => {
+      const itemEvidence = evidenceByPath.get(record.path);
+      return itemEvidence ? [{ path: record.path, role: capability.role, evidenceIds: [itemEvidence.id] }] : [];
+    });
+    if (candidatePaths.length === 0) return [];
+    const acceptanceCriterionIds = criteriaForCapability(specification, capability);
+    if (acceptanceCriterionIds.length === 0) return [];
+    const evidenceIds = unique(candidatePaths.flatMap((candidate) => candidate.evidenceIds));
+    return [{
+      id: surfaceId(capability.id, candidatePaths.map((candidate) => candidate.path), acceptanceCriterionIds),
+      capability: capability.id,
+      description: capability.description,
+      basis: "acceptance-criterion-match" as const,
+      candidatePaths,
+      acceptanceCriterionIds,
+      evidenceIds,
     }];
-
-  const contracts = relevant.filter((record) => evidenceKind(record.path) === "contract" && (domainPathMatch(record) || actionMatch(record))).map((record) => {
-    const consumerPaths = relevant.filter((candidate) => imports(candidate.content)
-      .some((specifier) => resolveInternalImport(candidate.path, specifier, knownPaths) === record.path))
-      .map((candidate) => candidate.path).sort();
-    return {
-      path: record.path,
-      symbol: evidenceByPath.get(record.path)?.symbol ?? null,
-      consumerPaths,
-      evidenceIds: [evidenceByPath.get(record.path)!.id],
-    };
   });
+  const surfaceByCandidatePath = new Map<string, Array<(typeof baseIntegrationSurfaces)[number]>>();
+  for (const surface of baseIntegrationSurfaces) for (const candidate of surface.candidatePaths) {
+    const values = surfaceByCandidatePath.get(candidate.path) ?? [];
+    values.push(surface);
+    surfaceByCandidatePath.set(candidate.path, values);
+  }
+  const compositionCandidates = relevant.filter(isCompositionRoot).flatMap((record) => {
+    const itemEvidence = evidenceByPath.get(record.path);
+    if (!itemEvidence) return [];
+    const linkedTargets = imports(record.content).flatMap((specifier) => {
+      const target = resolveInternalImport(record.path, specifier, knownPaths);
+      return target && surfaceByCandidatePath.has(target) ? [target] : [];
+    });
+    const linkedSurfaces = unique(linkedTargets.flatMap((target) => surfaceByCandidatePath.get(target) ?? []));
+    if (unique(linkedTargets).length < 2 || linkedSurfaces.length === 0) return [];
+    return [{
+      path: record.path,
+      role: "composition root that explicitly registers capability implementations",
+      evidenceIds: [itemEvidence.id],
+      linkedSurfaces,
+    }];
+  });
+  const compositionSurface: ExplorationArtifact["integrationSurfaces"] = compositionCandidates.length === 0 ? [] : [{
+    id: surfaceId(
+      "composition-root",
+      compositionCandidates.map((candidate) => candidate.path),
+      unique(compositionCandidates.flatMap((candidate) => candidate.linkedSurfaces.flatMap((surface) => surface.acceptanceCriterionIds))).sort(),
+    ),
+    capability: "composition-root",
+    description: "Explicit project composition roots that must register new feature providers, repositories, handlers, or resolvers.",
+    basis: "architectural-pattern",
+    candidatePaths: compositionCandidates.map(({ path, role, evidenceIds }) => ({ path, role, evidenceIds })),
+    acceptanceCriterionIds: unique(compositionCandidates.flatMap((candidate) =>
+      candidate.linkedSurfaces.flatMap((surface) => surface.acceptanceCriterionIds))).sort(),
+    evidenceIds: compositionCandidates.map((candidate) => candidate.evidenceIds[0]!),
+  }];
+  const generatedContractCandidates = relevant.flatMap((record) => {
+    const itemEvidence = evidenceByPath.get(record.path);
+    if (!itemEvidence) return [];
+    return generatedOutputs(record, knownPaths).map((path) => ({
+      path,
+      role: "generated contract output declared by repository codegen configuration",
+      evidenceIds: [itemEvidence.id],
+    }));
+  });
+  const generatedContractSurface: ExplorationArtifact["integrationSurfaces"] = generatedContractCandidates.length === 0 ||
+    !baseIntegrationSurfaces.some((surface) => surface.capability === "api-boundary") ? [] : [{
+      id: surfaceId("generated-contracts", generatedContractCandidates.map((candidate) => candidate.path),
+        specification.acceptanceCriteria.map((criterion) => criterion.id)),
+      capability: "generated-contracts",
+      description: "Generated client contracts that repository codegen updates from API operation documents.",
+      basis: "architectural-pattern",
+      candidatePaths: generatedContractCandidates,
+      acceptanceCriterionIds: specification.acceptanceCriteria.map((criterion) => criterion.id),
+      evidenceIds: unique(generatedContractCandidates.flatMap((candidate) => candidate.evidenceIds)),
+    }];
+  const integrationSurfaces: ExplorationArtifact["integrationSurfaces"] = [
+    ...baseIntegrationSurfaces,
+    ...compositionSurface,
+    ...generatedContractSurface,
+  ];
 
+  const preliminaryMode: ExplorationArtifact["featureMode"] = entryPoints.length > 0 && directRecords.length >= 2
+    ? "existing-feature"
+    : entryPoints.length === 0 && integrationSurfaces.length >= 2 ? "greenfield-feature" : "uncertain";
   const entryPathSet = new Set(entryPoints.map((entry) => entry.path));
+  const directPathSet = new Set(directRecords.map((record) => record.path));
   const connectedPaths = new Set(entryPathSet);
   let addedConnection = true;
   while (addedConnection) {
@@ -522,54 +963,109 @@ export function exploreProject(
       addedConnection = true;
     }
   }
-  const behaviorPathPattern = /(?:^|[-_/])(?:archive|archiv|cancel|close|deactivat|delete|remove|update|filter|status|arquiv|fech|exclu|remov|atualiz|filtr)\w*/i;
+  const allCriterionIds = specification.acceptanceCriteria.map((criterion) => criterion.id);
+  const affectedPaths: ExplorationArtifact["affectedPaths"] = preliminaryMode === "existing-feature"
+    ? unique([...directPathSet, ...connectedPaths]).flatMap((path) => {
+      const record = relevant.find((item) => item.path === path);
+      const itemEvidence = evidenceByPath.get(path);
+      if (!record || !itemEvidence || evidenceKind(path) === "test") return [];
+      const entry = entryPathSet.has(path);
+      const direct = directPathSet.has(path);
+      return [{
+        path,
+        confidence: entry ? "confirmed" as const : "likely" as const,
+        kind: "existing" as const,
+        basis: direct ? "direct-symbol" as const : "import-flow" as const,
+        acceptanceCriterionIds: allCriterionIds,
+        reason: direct
+          ? "Path or exported symbol directly matches the existing feature and is structurally connected to its entry flow."
+          : "Path is reached through a deterministic internal import from the existing feature entry flow.",
+        evidenceIds: [itemEvidence.id],
+      }];
+    }).sort((left, right) => left.path.localeCompare(right.path)).slice(0, 32)
+    : preliminaryMode === "greenfield-feature"
+      ? deriveGreenfieldScope(integrationSurfaces)
+      : [];
+
+  const affectedPathSet = new Set(affectedPaths.map((item) => item.path));
+  const candidates: ExplorationArtifact["candidates"] = relevant.filter((record) =>
+    !affectedPathSet.has(record.path) && !directPathSet.has(record.path) &&
+    !["manifest", "documentation", "configuration"].includes(evidenceKind(record.path)) &&
+    (record.pathScore > 0 || record.contentScore > 0),
+  ).slice(0, 24).map((record) => ({
+    path: record.path,
+    reason: "Lexical correspondence is retained as a candidate, but it lacks a direct symbol, flow, contract, or capability relationship that could authorize mutation.",
+    basis: "lexical-match" as const,
+    acceptanceCriterionIds: specification.acceptanceCriteria.filter((criterion) => {
+      const criterionTerms = tokens(`${criterion.statement} ${criterion.scenario.when} ${criterion.scenario.then}`);
+      const normalized = normalizeText(`${record.path} ${record.content}`);
+      return criterionTerms.filter((term) => normalized.includes(term)).length >= Math.max(2, Math.ceil(criterionTerms.length * 0.3));
+    }).map((criterion) => criterion.id),
+    evidenceIds: [evidenceByPath.get(record.path)!.id],
+  }));
+
+  const contracts = preliminaryMode === "existing-feature" ? relevant.filter((record) =>
+    evidenceKind(record.path) === "contract" && (directPathSet.has(record.path) || connectedPaths.has(record.path)),
+  ).map((record) => {
+    const consumerPaths = relevant.filter((candidate) => imports(candidate.content)
+      .some((specifier) => resolveInternalImport(candidate.path, specifier, knownPaths) === record.path))
+      .map((candidate) => candidate.path).sort();
+    return {
+      path: record.path,
+      symbol: evidenceByPath.get(record.path)?.symbol ?? null,
+      consumerPaths,
+      evidenceIds: [evidenceByPath.get(record.path)!.id],
+    };
+  }) : [];
+
+  const behaviorPathPattern = /(?:^|[-_/])(?:archive|archiv|cancel|close|deactivat|delete|remove|update|filter|status|create|list|upload|notify|send|arquiv|cancel|fech|exclu|remov|atualiz|filtr|cri|list)\w*/i;
   const similarImplementations = relevant.filter((record) =>
-    evidenceKind(record.path) === "source" &&
-    !entryPathSet.has(record.path) &&
-    (requestedActionGroups.length > 0 || domainEvidenceMatch(record) || actionMatch(record)) &&
-    (behaviorPathPattern.test(record.path) || (domainPathMatch(record) && /\.filter\s*\(/.test(record.content))),
-  )
-    .slice(0, 12).map((record) => ({
-      path: record.path,
-      similarity: domainPathMatch(record)
-        ? "Uses a related behavior or state transition inside the same repository domain."
-        : "Uses a related behavior or state transition in another repository domain.",
-      reusablePattern: "Repository-local organization and dependency direction for state-changing behavior.",
-      differences: [domainPathMatch(record)
-        ? "The discovered behavior may use a different verb or lifecycle transition than the requested change."
-        : "The discovered implementation belongs to another domain and cannot define this feature's business rules."],
-      evidenceIds: [evidenceByPath.get(record.path)!.id],
-    }));
-  const supportingPaths = new Set([
-    ...contracts.map((contract) => contract.path),
-    ...testRecords.map((record) => record.path),
-    ...similarImplementations.map((item) => item.path),
-    ...flows.filter((flow) => entryPathSet.has(flow.from)).map((flow) => flow.to),
-  ]);
-  const affectedPathCandidates = relevant.flatMap((record) => {
-    const kind = evidenceKind(record.path);
-    const confidence: "confirmed" | "likely" | "supporting" = entryPathSet.has(record.path)
-      ? "confirmed"
-      : kind === "source" && actionMatch(record) && domainEvidenceMatch(record) ? "likely" : "supporting";
-    if (confidence === "supporting" && !supportingPaths.has(record.path)) return [];
-    return [{
-      path: record.path,
-      confidence,
-      reason: confidence === "confirmed"
-        ? "A task-related execution entry point was found."
-        : confidence === "likely" ? "Source content and terminology indicate a likely implementation path."
-          : "This artifact supports the explored flow, contract, test, or structure.",
-      evidenceIds: [evidenceByPath.get(record.path)!.id],
+    evidenceKind(record.path) === "source" && !affectedPathSet.has(record.path) &&
+    integrationSurfaces.some((surface) => surface.candidatePaths.some((candidate) => candidate.path === record.path)) &&
+    behaviorPathPattern.test(record.path),
+  ).slice(0, 12).map((record) => ({
+    path: record.path,
+    similarity: "Implements an architectural capability required by the specification without being the requested feature itself.",
+    reusablePattern: "Repository-local layering, dependency direction, and boundary convention.",
+    differences: ["This analogous implementation supplies a convention only; it cannot define the feature's product behavior."],
+    evidenceIds: [evidenceByPath.get(record.path)!.id],
+  }));
+
+  const testRecords = relevant.filter((record) => evidenceKind(record.path) === "test");
+  const testCapability = inspection.capabilities.find((item) => item.id === "test");
+  const tests: ExplorationArtifact["tests"] = testRecords.length > 0
+    ? testRecords.slice(0, 24).map((record) => {
+      const imported = imports(record.content).map((specifier) => resolveInternalImport(record.path, specifier, knownPaths))
+        .filter((path): path is string => Boolean(path));
+      const direct = imported.some((path) => affectedPathSet.has(path) || directPathSet.has(path));
+      const analogous = imported.some((path) => similarImplementations.some((item) => item.path === path));
+      return {
+        path: record.path,
+        state: direct ? "direct" as const : analogous ? "analogous" as const
+          : record.capabilityScore > 0 ? "infrastructure" as const : "candidate" as const,
+        reason: direct
+          ? "The test imports a substantive feature path."
+          : analogous ? "The test covers an analogous architectural pattern, not the requested feature."
+            : record.capabilityScore > 0 ? "The test exercises shared infrastructure relevant to an integration surface."
+              : "Lexical similarity alone is insufficient for direct test classification.",
+        evidenceIds: [evidenceByPath.get(record.path)!.id],
+      };
+    })
+    : [{
+      path: null,
+      state: testCapability?.state === "detected" ? "capability-without-coverage" : "capability-unavailable",
+      reason: testCapability?.state === "detected"
+        ? "A test capability exists, but bounded exploration found no directly related test."
+        : "Project inspection did not detect an executable test capability.",
+      evidenceIds: [],
     }];
-  }).sort((left, right) => left.path.localeCompare(right.path));
-  const affectedPaths = [
-    ...affectedPathCandidates.filter((item) => item.confidence !== "supporting"),
-    ...affectedPathCandidates.filter((item) => item.confidence === "supporting").slice(0, 24),
-  ].sort((left, right) => left.path.localeCompare(right.path));
 
   const riskFindings: ExplorationArtifact["risk"]["findings"] = [];
   const substantivePathSet = new Set(affectedPaths.filter((item) => item.confidence !== "supporting").map((item) => item.path));
-  const riskRecords = relevant.filter((record) => substantivePathSet.has(record.path) || connectedPaths.has(record.path));
+  const surfaceCandidatePaths = new Set(integrationSurfaces.flatMap((surface) => surface.candidatePaths.map((candidate) => candidate.path)));
+  const riskRecords = relevant.filter((record) =>
+    substantivePathSet.has(record.path) || connectedPaths.has(record.path) || surfaceCandidatePaths.has(record.path),
+  );
   const addRisk = (signal: RiskSignal, pattern: RegExp, reason: string): void => {
     const ids = riskRecords.filter((record) => pattern.test(`${record.path}\n${record.content}`))
       .map((record) => evidenceByPath.get(record.path)?.id).filter((id): id is string => Boolean(id));
@@ -606,7 +1102,7 @@ export function exploreProject(
     .flatMap((item) => item.evidenceIds).slice(0, 20);
   const unknowns: ExplorationArtifact["unknowns"] = plan.understanding.unknowns.map((question) => {
     const implementationUnknown = /implementation files|package scope/i.test(question);
-    if (implementationUnknown && resolvedPathEvidence.length > 0 && actionCoverage) return {
+    if (implementationUnknown && resolvedPathEvidence.length > 0 && preliminaryMode !== "uncertain") return {
       question,
       status: "resolved" as const,
       resolution: "Repository exploration identified evidence-backed implementation paths.",
@@ -615,8 +1111,8 @@ export function exploreProject(
     return {
       question,
       status: "remaining" as const,
-      resolution: implementationUnknown && !actionCoverage
-        ? "No repository evidence of the requested behavior was found; entry and comparable patterns are context, not proof of the final implementation scope."
+      resolution: implementationUnknown && preliminaryMode === "uncertain"
+        ? "Exploration found candidates but did not establish an existing feature flow or sufficient greenfield integration surfaces."
         : "Bounded exploration did not establish this fact.",
       evidenceIds: [],
     };
@@ -635,49 +1131,50 @@ export function exploreProject(
   });
 
   const acceptanceCoverage = specification.acceptanceCriteria.map((criterion) => {
-    const criterionTerms = tokens(`${criterion.statement} ${criterion.scenario.given} ${criterion.scenario.when} ${criterion.scenario.then}`);
-    const minimumMatches = Math.max(2, Math.ceil(criterionTerms.length * 0.25));
-    const matching = relevant
-      .filter((record) => !["documentation", "manifest"].includes(evidenceKind(record.path)))
-      .map((record) => ({
-        record,
-        score: criterionTerms.filter((term) => normalizeText(record.content).includes(term)).length,
-      }))
-      .filter((candidate) => candidate.score >= minimumMatches)
-      .sort((left, right) => right.score - left.score || left.record.path.localeCompare(right.record.path))
-      .slice(0, 8)
-      .map((candidate) => evidenceByPath.get(candidate.record.path)?.id)
-      .filter((id): id is string => Boolean(id));
+    const surfaceEvidence = integrationSurfaces.filter((surface) => surface.acceptanceCriterionIds.includes(criterion.id))
+      .flatMap((surface) => surface.evidenceIds);
+    const directEvidence = preliminaryMode === "existing-feature" ? directRecords.filter((record) => {
+      const criterionTerms = tokens(`${criterion.statement} ${criterion.scenario.given} ${criterion.scenario.when} ${criterion.scenario.then}`);
+      const normalized = normalizeText(`${record.path} ${record.content}`);
+      return criterionTerms.filter((term) => normalized.includes(term)).length >= Math.max(2, Math.ceil(criterionTerms.length * 0.25));
+    }).map((record) => evidenceByPath.get(record.path)?.id).filter((id): id is string => Boolean(id)) : [];
+    const matching = unique([...surfaceEvidence, ...directEvidence]).slice(0, 12);
     return {
       criterionId: criterion.id,
       source: "specification" as const,
-      status: matching.length > 1 ? "evidence-found" as const : matching.length === 1 ? "partial" as const : "not-found" as const,
-      evidenceIds: unique(matching),
+      status: matching.length > 0 ? "evidence-found" as const : "not-found" as const,
+      evidenceIds: matching,
       note: matching.length > 0
-        ? "Repository evidence relates to this supplied criterion; it does not redefine the criterion."
-        : "No evidence for this supplied criterion was found within the exploration budget.",
+        ? preliminaryMode === "greenfield-feature"
+          ? "An evidence-backed integration surface makes this supplied criterion plannable; implementation is not claimed."
+          : "Direct feature evidence relates to this supplied criterion; it does not redefine the criterion."
+        : "No substantive evidence for this supplied criterion was found within the exploration budget.",
     };
   });
 
-  const exhausted = ranked.length > selectedPaths.length;
   const substantivePaths = affectedPaths.filter((item) => item.confidence !== "supporting");
+  const requiredCriterionIds = specification.acceptanceCriteria.filter((criterion) => criterion.priority === "required")
+    .map((criterion) => criterion.id);
+  const coveredCriterionIds = new Set(acceptanceCoverage.filter((item) => item.status === "evidence-found")
+    .map((item) => item.criterionId));
+  const requiredCoverage = requiredCriterionIds.every((id) => coveredCriterionIds.has(id));
+  const sufficientExisting = preliminaryMode === "existing-feature" && entryPoints.length > 0 && substantivePaths.length > 1;
+  const sufficientGreenfield = preliminaryMode === "greenfield-feature" && integrationSurfaces.length >= 2 &&
+    substantivePaths.length >= 2 && requiredCoverage;
   let status: ExplorationArtifact["status"];
   let stopReason: ExplorationArtifact["stopReason"];
-  if (substantivePaths.length === 0) {
+  if (sufficientExisting || sufficientGreenfield) {
+    status = "ready";
+    stopReason = "sufficient-evidence";
+  } else if (substantivePaths.length === 0) {
     status = "blocked";
     stopReason = inventory.length === 0 ? "blocked-by-missing-context" : "blocked-by-ambiguity";
-  } else if (!actionCoverage) {
-    status = "partial";
-    stopReason = "scope-boundary";
   } else if (exhausted) {
     status = "partial";
     stopReason = "budget-exhausted";
-  } else if (entryPoints.length === 0) {
+  } else {
     status = "partial";
     stopReason = "scope-boundary";
-  } else {
-    status = "ready";
-    stopReason = "sufficient-evidence";
   }
 
   const contextManifest = resolveContextManifest(KNOWLEDGE_CATALOG, {
@@ -696,6 +1193,8 @@ export function exploreProject(
     specificationId: specification.id,
     sourceRevision,
     evidenceIds,
+    featureMode: preliminaryMode,
+    integrationSurfaceIds: integrationSurfaces.map((surface) => surface.id),
     stopReason,
   };
   const id = `exploration-${createHash("sha256").update(JSON.stringify(contentForId)).digest("hex").slice(0, 12)}`;
@@ -711,18 +1210,40 @@ export function exploreProject(
       technologies: [...plan.project.technologies].sort(),
       packages: [...inspection.packages].sort(),
     },
+    featureMode: preliminaryMode,
     contextManifest,
     budget: {
       maxFilesInspected,
       filesInventoried: inventory.length,
       filesInspected: selectedPaths.length,
       exhausted,
+      passes: [{
+        phase: "reconnaissance",
+        allowance: passOneAllowance,
+        consumed: passOnePaths.length,
+        reason: "Inspect manifests and the strongest structural or terminology candidates first.",
+        prioritizedRegions: [],
+      }, {
+        phase: "targeted",
+        allowance: passTwoAllowance,
+        consumed: passTwoPaths.length,
+        reason: "Concentrate the second pass on capability-bearing regions discovered during reconnaissance.",
+        prioritizedRegions,
+      }, {
+        phase: "resolution",
+        allowance: passThreeAllowance,
+        consumed: passThreePaths.length,
+        reason: "Spend the remaining bounded budget on internal imports and unresolved high-value capability candidates.",
+        prioritizedRegions,
+      }],
     },
     terminology,
     evidence,
     entryPoints,
     flows: flows.sort((left, right) => `${left.from}:${left.to}`.localeCompare(`${right.from}:${right.to}`)),
     similarImplementations,
+    candidates,
+    integrationSurfaces,
     affectedPaths,
     contracts,
     tests,

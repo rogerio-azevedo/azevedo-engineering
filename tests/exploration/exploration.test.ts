@@ -73,6 +73,62 @@ export class ArchiveRealizationController { archive() { return "archived"; } }
   return root;
 }
 
+function greenfieldProject(): string {
+  const root = project(false);
+  write(root, "src/application/entities/resident.ts", "export type Resident = { id: string; condominiumId: string };\n");
+  write(root, "src/application/repositories/residents-repository.ts", "export interface ResidentsRepository { findByUnit(unitId: string): Promise<unknown>; }\n");
+  write(root, "src/infra/database/repositories/prisma-residents-repository.ts", "export class PrismaResidentsRepository {}\n");
+  write(root, "src/infra/http/resolvers/residents-resolver.ts", "export class ResidentsResolver {}\n");
+  write(root, "src/infra/http/dtos/resident-input.ts", "export type ResidentInput = { blockId: string; unitId: string };\n");
+  write(root, "src/infra/storage/image-storage.ts", "export interface ImageStorage { upload(file: unknown): Promise<string>; }\n");
+  write(root, "src/infra/mail/email-provider.ts", "export interface EmailProvider { send(recipient: string): Promise<void>; }\n");
+  write(root, "src/infra/database/database.module.ts", `
+import { Module } from "@nestjs/common";
+import { PrismaResidentsRepository } from "./repositories/prisma-residents-repository.js";
+import { ResidentsRepository } from "../../application/repositories/residents-repository.js";
+@Module({ providers: [{ provide: ResidentsRepository, useClass: PrismaResidentsRepository }] })
+export class DatabaseModule {}
+`);
+  write(root, "src/infra/http/http.module.ts", `
+import { Module } from "@nestjs/common";
+import { ResidentsResolver } from "./resolvers/residents-resolver.js";
+import { AddressForm } from "../../components/forms/address-form.js";
+@Module({ providers: [ResidentsResolver, AddressForm] })
+export class HttpModule {}
+`);
+  write(root, "src/components/forms/address-form.tsx", "export const AddressForm = () => null;\n");
+  write(root, "src/app/(app)/condominium/[id]/create-address/page.tsx", "export default function CreateAddressPage() { return null; }\n");
+  write(root, "tests/encomenda-ai.spec.ts", "const prompt = 'registrar encomenda por inteligencia artificial'; void prompt;\n");
+  return root;
+}
+
+function greenfieldSpecification() {
+  return createFeatureSpecification({
+    title: "Cadastrar encomenda",
+    objective: "Cadastrar encomenda",
+    expectedBehaviors: ["Persistir o registro e expor o fluxo no backend e na interface web."],
+    businessRules: ["Bloco e unidade devem pertencer ao condomínio corrente."],
+    acceptanceCriteria: [{
+      id: "ac-register-delivery",
+      source: { kind: "user", reference: null },
+      statement: "Registrar a encomenda para bloco e unidade existentes.",
+      scenario: { given: "um condomínio com bloco e unidade", when: "o usuário autorizado envia dados válidos ao backend", then: "o registro fica persistido" },
+      prohibitedEffects: ["Não criar endereço implicitamente."],
+      verificationMethod: "Teste de comportamento.",
+      priority: "required",
+    }, {
+      id: "ac-attach-photo",
+      source: { kind: "user", reference: null },
+      statement: "Adicionar foto pelo formulário web.",
+      scenario: { given: "um browser", when: "o usuário seleciona uma imagem", then: "o upload fica vinculado ao registro" },
+      prohibitedEffects: ["Não exigir aplicativo nativo."],
+      verificationMethod: "Teste de integração.",
+      priority: "required",
+    }],
+    provenance: { sources: [{ kind: "user", reference: null, revision: null }] },
+  });
+}
+
 function specification() {
   return createFeatureSpecification({
     title: "Adicionar endpoint para arquivar uma realização",
@@ -135,6 +191,65 @@ test("exploration is deterministic for an unchanged source revision", () => {
   assert.deepEqual(first, second);
 });
 
+test("greenfield exploration derives integration surfaces and proposed boundaries without promoting lexical paths", () => {
+  const root = greenfieldProject();
+  const inspection = createInspectResult(root);
+  assert.equal(inspection.kind, "project");
+  if (inspection.kind !== "project") throw new Error("Expected project.");
+  const spec = greenfieldSpecification();
+  const plan = buildEngineeringPlan(inspection, spec.objective);
+  const result = exploreProject(root, inspection, plan, spec);
+  const artifact = result.artifact;
+
+  assert.equal(artifact.featureMode, "greenfield-feature");
+  assert.equal(artifact.status, "ready");
+  assert.deepEqual(artifact.entryPoints, []);
+  assert.ok(artifact.integrationSurfaces.some((surface) => surface.capability === "persistence"));
+  assert.ok(artifact.integrationSurfaces.some((surface) => surface.capability === "web-ui"));
+  assert.ok(artifact.integrationSurfaces.every((surface) => surface.evidenceIds.length > 0 && surface.acceptanceCriterionIds.length > 0));
+  assert.ok(artifact.affectedPaths.some((item) => item.kind === "proposed" && item.basis === "architectural-pattern"));
+  assert.ok(artifact.affectedPaths.some((item) => item.path === "src/application/repositories"));
+  assert.ok(artifact.integrationSurfaces.some((surface) => surface.capability === "composition-root"));
+  assert.ok(artifact.affectedPaths.some((item) => item.path === "src/infra/database/database.module.ts"));
+  assert.ok(artifact.affectedPaths.some((item) => item.path === "src/infra/http/http.module.ts"));
+  assert.ok(!artifact.affectedPaths.some((item) => item.path.includes("create-address/page.tsx")));
+  assert.ok(artifact.candidates.some((item) => item.path.includes("create-address/page.tsx")));
+  assert.ok(artifact.tests.some((item) => item.path === "tests/encomenda-ai.spec.ts" && item.state !== "direct"));
+  assert.ok(result.revision);
+});
+
+test("notification UI and form errors do not masquerade as outbound email delivery", () => {
+  const root = project(false);
+  write(root, "src/app/(app)/notifications/notification-filters/filters-items.tsx", `
+export function NotificationFilters() { return <div>Filtrar notificações</div>; }
+`);
+  write(root, "src/components/form/error-message.tsx", `
+export function ErrorMessage() { return <p>Mensagem inválida</p>; }
+`);
+  write(root, "src/graphql/queries/list-notifications.graphql", "query ListNotifications { notifications { id } }\n");
+  const inspection = createInspectResult(root);
+  assert.equal(inspection.kind, "project");
+  if (inspection.kind !== "project") throw new Error("Expected project.");
+  const spec = createFeatureSpecification({
+    title: "Cadastrar encomenda",
+    objective: "Cadastrar encomenda",
+    expectedBehaviors: ["Enviar e-mail ao destinatário e listar o registro na interface web."],
+    acceptanceCriteria: [{
+      id: "ac-email-delivery",
+      source: { kind: "user", reference: null },
+      statement: "Enviar e-mail ao destinatário.",
+      scenario: { given: "um cadastro válido", when: "o envio ocorre", then: "o resultado fica registrado" },
+      prohibitedEffects: ["Não alterar o estado físico quando o e-mail falhar."],
+      verificationMethod: "Teste do provider.",
+      priority: "required",
+    }],
+    provenance: { sources: [{ kind: "user", reference: null, revision: null }] },
+  });
+  const plan = buildEngineeringPlan(inspection, spec.objective);
+  const artifact = exploreProject(root, inspection, plan, spec).artifact;
+  assert.ok(!artifact.integrationSurfaces.some((surface) => surface.capability === "email-delivery"));
+});
+
 test("exploration rejects a specification associated with an unrelated plan", () => {
   const root = project();
   const inspection = createInspectResult(root);
@@ -155,7 +270,9 @@ test("exploration blocks instead of guessing when no repository evidence matches
   assert.equal(result.artifact.status, "blocked");
   assert.equal(result.artifact.stopReason, "blocked-by-ambiguity");
   assert.deepEqual(result.artifact.affectedPaths, []);
-  assert.equal(result.revision, null);
+  assert.ok(result.revision);
+  assert.deepEqual(result.revision?.planSnapshot.scope.affectedPaths, []);
+  assert.match(result.revision?.changeSummary.at(-1) ?? "", /blocked-by-ambiguity/);
 });
 
 test("exploration contract rejects dangling evidence and resolved unknowns without evidence", () => {
@@ -175,17 +292,19 @@ test("exploration contract rejects dangling evidence and resolved unknowns witho
   }), /boundary or budget/);
 });
 
-test("exploration records budget exhaustion instead of claiming complete coverage", () => {
+test("exploration records bounded exhaustion but may stop when evidence is already sufficient", () => {
   const root = budgetLimitedProject();
   const inspection = createInspectResult(root);
   assert.equal(inspection.kind, "project");
   if (inspection.kind !== "project") throw new Error("Expected project.");
   const plan = buildEngineeringPlan(inspection, specification().objective);
   const result = exploreProject(root, inspection, plan, specification(), { maxFilesInspected: 10 });
-  assert.equal(result.artifact.status, "partial");
-  assert.equal(result.artifact.stopReason, "budget-exhausted");
+  assert.equal(result.artifact.status, "ready");
+  assert.equal(result.artifact.stopReason, "sufficient-evidence");
   assert.equal(result.artifact.budget.exhausted, true);
   assert.equal(result.artifact.budget.filesInspected, 10);
+  assert.deepEqual(result.artifact.budget.passes.map((pass) => pass.phase), ["reconnaissance", "targeted", "resolution"]);
+  assert.equal(result.artifact.budget.passes.reduce((total, pass) => total + pass.consumed, 0), 10);
 });
 
 test("exploration artifacts persist create-only and distinguish unchanged from conflict", () => {

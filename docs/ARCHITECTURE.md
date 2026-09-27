@@ -1,7 +1,7 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Guided Execution v0.6
-- Atualização: 2026-09-26
+- Status: base arquitetural aprovada; Guided Execution v0.6.1
+- Atualização: 2026-09-27
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
 - Estado local: `.azevedo/`
@@ -324,13 +324,13 @@ O pipeline é `Task → Inspect Project → Resolve Scope → Classify Risk → 
 
 IDs derivam deterministicamente da task normalizada, topologia e scope inicial. O ID representa a identidade da intenção, não um hash de toda inspection transitória. Persistência é create-only: conteúdo idêntico é unchanged; conteúdo diferente sob o mesmo ID é conflict.
 
-Pesquisa posterior não sobrescreve o plano base. `EngineeringPlanRevision` mantém o mesmo `planId`, um snapshot completo enriquecido, critérios de aceite persistentes, subject revision, fontes, Knowledge Units, sequência, parent e change summary. Cada revisão também é determinística e create-only em `.azevedo/plans/<plan-id>/revisions/<revision-id>.json`. `explore` propõe e, fora de dry-run, persiste a revisão quando existe scope evidence-backed não bloqueado. Na v0.6 a revisão alimenta Guided Execution; provider automation e review especializado continuam futuros.
+Pesquisa posterior não sobrescreve o plano base. `EngineeringPlanRevision` mantém o mesmo `planId`, um snapshot completo enriquecido, critérios de aceite persistentes, subject revision, fontes, Knowledge Units, sequência, parent e change summary. Cada revisão também é determinística e create-only em `.azevedo/plans/<plan-id>/revisions/<revision-id>.json`. `explore` produz uma revisão formal inclusive para resultados parciais ou bloqueados quando os contracts básicos existem; ela registra honestamente scope vazio e stop reason em vez de fingir sucesso. Na v0.6.1 a revisão alimenta tanto readiness `ready` quanto diagnóstico formal `blocked`; provider automation e review especializado continuam futuros.
 
 ### 5.11 Specification Intake e Evidence-backed Exploration
 
 `FeatureSpecification` é autoridade de intenção; código é evidência de comportamento atual. O contrato preserva somente dados fornecidos e mantém acceptance criteria com source explícita. O intake não completa lacunas a partir do repositório. Sem arquivo de Specification, `explore` cria uma forma mínima exclusivamente da task persistida no Engineering Plan. Com Specification externa, seu objetivo deve ser exatamente a task do Plan; intenções diferentes exigem plans diferentes e falham antes da exploração.
 
-`ExplorationArtifact` registra Specification/Plan IDs, subject revision, ContextManifest, budget, terminology mappings, evidence, entry points, flows, similar implementations, affected paths com confiança, contracts/consumers, tests, dependencies, risk findings, unknowns, assumptions, hypotheses, acceptance coverage, status e stop reason. Evidence paths são project-relative; referências dangling e unknowns resolvidos sem evidence são inválidos.
+`ExplorationArtifact` registra Specification/Plan IDs, subject revision, ContextManifest, modo da feature, passes do budget, terminology mappings, evidence, entry points, flows, candidates, integration surfaces, similar implementations, affected paths com basis e critérios relacionados, contracts/consumers, classificação de tests, dependencies, risk findings, unknowns, assumptions, hypotheses, acceptance coverage, status e stop reason. Evidence paths são project-relative; referências dangling e unknowns resolvidos sem evidence são inválidos.
 
 O pipeline é read-only até a persistência dos próprios artifacts:
 
@@ -338,13 +338,14 @@ O pipeline é read-only até a persistência dos próprios artifacts:
 Specification + Engineering Plan + Project Inspection
   → structural reconnaissance
   → deterministic terminology expansion
-  → entry/flow/pattern/contract/test/risk discovery
+  → existing-feature: entry → flow → dependencies → tests
+  → greenfield-feature: requirements → capabilities → integration surfaces → proposed scope
   → evidence and gap validation
   → explicit stop decision
-  → ExplorationArtifact + optional EngineeringPlanRevision
+  → ExplorationArtifact + EngineeringPlanRevision
 ```
 
-As razões de parada são `sufficient-evidence`, `blocked-by-ambiguity`, `blocked-by-missing-context`, `scope-boundary` e `budget-exhausted`. `partial` e `blocked` são resultados válidos. O runtime não executa scripts do target, não usa provider externo e não transforma similaridade lexical em requisito de negócio.
+As razões de parada são `sufficient-evidence`, `blocked-by-ambiguity`, `blocked-by-missing-context`, `scope-boundary` e `budget-exhausted`. `partial` e `blocked` são resultados válidos. Existing-feature exige entry/flow substantivo; greenfield pode ser suficiente sem símbolo próprio quando há integration surfaces, boundaries arquiteturais e coverage planejável dos critérios obrigatórios. Lexical matches permanecem candidates. O runtime não executa scripts do target, não usa provider externo e não transforma similaridade lexical em requirement, entry point, affected path, contract, consumer ou direct test.
 
 ### 5.12 Classificação de tarefa e risco
 
@@ -527,19 +528,21 @@ azevedo-engineering/
 
 No futuro, `schemas`, `runtime` e `cli` podem virar packages independentes sem alterar os contratos. Um diretório de plugin só deverá existir quando houver implementação real do plugin.
 
-## 11. Guided Execution v0.6
+## 11. Guided Execution v0.6.1
 
 ### 11.1 Readiness e autoridade
 
 `EngineeringPlanRevision` é a entrada de execution porque referencia a Specification e Exploration, preserva acceptance criteria e contém o plano enriquecido. `ExecutionReadiness` é binário e explicável. Não há score: qualquer condição blocking produz `blocked`.
 
-As principais condições são consistência de artifacts, acceptance criteria, source revision ainda válida, scope com entry point e affected path substantivo, verification obrigatória disponível, ausência de mudanças humanas não isoladas, write authorization e linked worktree. Questões da Specification são `product-decision` e bloqueiam; lacunas pesquisáveis do codebase são `technical-unknown` e entram como `investigate`; dependências externas ficam `observe` ou `block` conforme a evidência de disponibilidade.
+As principais condições são consistência de artifacts, acceptance criteria, source revision ainda válida, scope substantivo e com proveniência, verification obrigatória disponível e ausência de mudanças humanas não isoladas. Existing-feature requer entry point; greenfield requer integration surfaces e proposed scope derivado de padrão arquitetural, evidence ids e relação com acceptance criteria. Questões da Specification são `product-decision` e bloqueiam; lacunas pesquisáveis do codebase são `technical-unknown` e entram como `investigate`; dependências externas ficam `observe` ou `block` conforme a evidência de disponibilidade.
+
+Readiness é uma avaliação read-only e não inclui autorização operacional. `mutationAuthorized` exige, além de readiness `ready`, autorização explícita, linked worktree e checkpoint capturado. Uma preparation no working tree principal pode portanto ser `ready` sem criar `ExecutionContext` ou `ExecutionSession` executável.
 
 Readiness não reduz risk. O maior nível entre revision e exploration prevalece. Similaridade de código nunca resolve uma product decision.
 
 ### 11.2 Contexto e boundary do agente
 
-`ExecutionContext` referencia Plan Revision, Specification e Exploration e materializa apenas intenção, critérios, scope, flows, padrões, contracts/tests relevantes, risk, unknowns técnicos, verification e Knowledge Units aplicáveis. O orçamento padrão simples é 6.000 tokens estimados. Specification, acceptance e scope são obrigatórios; conteúdo opcional de menor prioridade é omitido com referências preservadas.
+`ExecutionContext` referencia Plan Revision, Specification e Exploration e materializa apenas intenção, regras de negócio, decisões, critérios, scope, integration surfaces, flows, padrões, contracts/tests relevantes, risk, unknowns técnicos, verification e Knowledge Units aplicáveis. O default é 6.000 tokens estimados. O core obrigatório é medido separadamente: sem limite explícito, o budget efetivo cresce de forma registrada quando necessário; com limite explícito menor que o core, a preparação falha. Conteúdo opcional de menor prioridade é omitido primeiro, com referências preservadas.
 
 As instruções renderizadas possuem seções estáveis de intenção, evidência, critérios, scope, padrões, riscos, unknowns, constraints, verification e stop conditions. `CodingAgent.execute(context)` é uma interface do core; não há adapter de provider na v0.6. O Codex atual pode consumir o artifact e devolver resultado estruturado sem o domínio depender de sua API.
 
@@ -559,9 +562,13 @@ Attempts classificam falhas antes de recovery. A v0.6 limita cada sessão a trê
 
 ### 11.5 Verification e secrets
 
-O Verification Runtime aceita somente targets do `VerificationPlan` correspondentes a package scripts presentes na inspection atual. Usa package manager detectado, argumentos fixos, `shell: false`, timeout e digest do output. Scripts desconhecidos, capabilities indisponíveis ou padrões destrutivos (`rm -rf`, `sudo`, `git reset --hard`, `git clean`, `curl|sh` e equivalentes cobertos) são bloqueados.
+O Verification Runtime aceita somente targets do `VerificationPlan` correspondentes a package scripts presentes na inspection atual. Usa package manager detectado, argumentos fixos, `shell: false`, timeout e digest do output. Capability disponível e requirement obrigatória são separadas: ausência não obrigatória permanece visível sem bloquear; requirement explicitamente obrigatória e indisponível bloqueia. Scripts desconhecidos e padrões destrutivos (`rm -rf`, `sudo`, `git reset --hard`, `git clean`, `curl|sh` e equivalentes cobertos) são bloqueados.
 
 Artifacts persistem somente nomes de environment variables em formato `UPPER_SNAKE_CASE`. O serializer recusa campos óbvios de credential e atribuições como `API_KEY=value`. Output bruto de verification não é persistido; somente digest e resumo controlado entram em evidence.
+
+### 11.6 Features em Project Groups
+
+`CoordinatedEngineeringPlan` representa uma Specification e intenção humanas compartilhadas com scopes project-relative obrigatórios. Cada scope preserva seu plano, Exploration, Plan Revision, risks e Verification Plan próprios. `CoordinatedExecutionPreparation` agrega readiness sem criar sessão nem mutar source: qualquer scope obrigatório bloqueado torna o resultado combinado `blocked`. O Plan ID compartilhado representa a intenção quando os planos locais já possuem a mesma identidade; scope e artifact IDs distinguem evidência específica. Não existe mega-orchestrator ou execução multi-agent nesta versão.
 
 ## 12. Distribuição por CLI/NPM
 
@@ -645,6 +652,10 @@ Skills terão casos positivos, negativos, indiretos, incompletos e adversariais.
 23. Guided Execution começa por uma Revision aprovada, separa preparação de mutação e exige autorização + linked worktree para source write.
 24. Execution IDs combinam sequence explícita e digest do contexto/checkpoint; snapshots preservam histórico imutável.
 25. Verification executa somente capabilities descobertas, sem shell, e completion exige evidence real por critério.
+26. Exploration distingue feature existente, greenfield e incerta; lexical candidate nunca concede autoridade de escrita.
+27. Readiness, isolation setup e mutation authorization são fases distintas; sessão executável nasce somente após checkpoint isolado.
+28. Capability de verification ausente só bloqueia quando é requirement obrigatória.
+29. Uma intenção cross-repo possui scopes e readiness coordenados, sem fundir evidência ou verification dos projetos.
 
 ADRs relacionados:
 
@@ -658,10 +669,11 @@ ADRs relacionados:
 - [ADR-0008 — Knowledge Units and Deterministic Context Selection](decisions/0008-knowledge-units-and-deterministic-context-selection.md)
 - [ADR-0009 — Specification Authority and Evidence-backed Exploration](decisions/0009-specification-authority-and-evidence-backed-exploration.md)
 - [ADR-0010 — Guided Execution, Isolation and Session Evidence](decisions/0010-guided-execution-isolation-and-session-evidence.md)
+- [ADR-0011 — Greenfield Exploration and Coordinated Readiness](decisions/0011-greenfield-exploration-and-coordinated-readiness.md)
 
-## 15. Limite da v0.6
+## 15. Limite da v0.6.1
 
-A v0.6 preserva toda a foundation v0.5 e adiciona Guided Execution sem loop autônomo:
+A v0.6.1 preserva a Guided Execution v0.6 e corrige somente limitações observadas no dogfood, sem loop autônomo:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -717,5 +729,9 @@ A v0.6 preserva toda a foundation v0.5 e adiciona Guided Execution sem loop aut�
 - persistence create-only em `.azevedo/executions/`, snapshots append-only e três attempts no máximo;
 - Verification Runtime de scripts descobertos, `shell: false`, deny rules e EvidenceRecord;
 - product decisions bloqueantes, technical unknowns investigáveis, risk preservation e secret-value rejection.
+- modos de Exploration existing/greenfield/uncertain, integration surfaces, candidate separation e passes adaptativos limitados;
+- revisão formal para exploration parcial/bloqueada, scope-quality gate e classificação estrutural de testes;
+- capability versus requirement de verification, context core protegido e fases explícitas de readiness/isolation/authorization;
+- contratos provider-neutral de plano e preparation coordenados para Project Groups.
 
 O trabalho para na preparação e no registro disciplinado de uma Guided Execution. O core possui readiness, contexto, sessão, scope control e verification runtime; não possui loop autônomo nem integração de provider. Review/security runtime, PR/commit/push, deployment, memória/learning, multi-agent, provider selection, update, migration do harness, rollback transacional, `--force`, prompts interativos, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.

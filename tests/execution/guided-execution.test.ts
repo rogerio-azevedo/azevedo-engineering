@@ -171,6 +171,82 @@ test("readiness blocks failed exploration, mismatched artifacts, and missing req
   assert.equal(critical.context?.risks.class, "critical");
 });
 
+test("readiness rejects candidate-only scope and accepts criterion-linked greenfield architectural scope", () => {
+  const value = fixture();
+  const evidence = value.exploration.evidence[0]!;
+  const criterionId = value.specification.acceptanceCriteria[0]!.id;
+  const candidateOnlyExploration = {
+    ...value.exploration,
+    featureMode: "uncertain" as const,
+    status: "partial" as const,
+    stopReason: "scope-boundary" as const,
+    entryPoints: [],
+    integrationSurfaces: [],
+    affectedPaths: [],
+    candidates: [{
+      path: evidence.path,
+      reason: "Lexical similarity without a structural relationship.",
+      basis: "lexical-match" as const,
+      acceptanceCriterionIds: [criterionId],
+      evidenceIds: [evidence.id],
+    }],
+  };
+  const candidateOnly = assessExecutionReadiness({
+    ...value,
+    exploration: candidateOnlyExploration,
+    revision: {
+      ...value.revision,
+      planSnapshot: {
+        ...value.revision.planSnapshot,
+        scope: { ...value.revision.planSnapshot.scope, affectedPaths: [] },
+      },
+    },
+    writeAuthorized: false,
+  });
+  assert.equal(candidateOnly.status, "blocked");
+  assert.ok(candidateOnly.reasons.some((reason) => reason.code === "scope-insufficient"));
+
+  const proposedPath = "src/application";
+  const greenfieldExploration = {
+    ...value.exploration,
+    featureMode: "greenfield-feature" as const,
+    entryPoints: [],
+    flows: [],
+    candidates: [],
+    integrationSurfaces: [{
+      id: "surface-persistence-12345678",
+      capability: "persistence",
+      description: "Existing persistence boundary.",
+      basis: "acceptance-criterion-match" as const,
+      candidatePaths: [{ path: evidence.path, role: "architectural persistence pattern", evidenceIds: [evidence.id] }],
+      acceptanceCriterionIds: [criterionId],
+      evidenceIds: [evidence.id],
+    }],
+    affectedPaths: [{
+      path: proposedPath,
+      confidence: "likely" as const,
+      kind: "proposed" as const,
+      basis: "architectural-pattern" as const,
+      acceptanceCriterionIds: [criterionId],
+      reason: "New artifact boundary derived from the cited project pattern.",
+      evidenceIds: [evidence.id],
+    }],
+  };
+  const greenfield = assessExecutionReadiness({
+    ...value,
+    exploration: greenfieldExploration,
+    revision: {
+      ...value.revision,
+      planSnapshot: {
+        ...value.revision.planSnapshot,
+        scope: { ...value.revision.planSnapshot.scope, affectedPaths: [proposedPath] },
+      },
+    },
+    writeAuthorized: false,
+  });
+  assert.equal(greenfield.status, "ready");
+});
+
 test("preparation selects execution knowledge, enforces context budget, and creates distinct deterministic sessions", () => {
   const value = fixture();
   const first = prepareExecution({ ...value, executionSequence: 1, writeAuthorized: true, maxContextTokens: 6_000 });
@@ -197,6 +273,89 @@ test("preparation selects execution knowledge, enforces context budget, and crea
     writeAuthorized: true,
   });
   assert.deepEqual(withEnvironment.context?.permissions.requiredEnvironmentVariables, ["JEV_API_KEY"]);
+});
+
+test("read-only readiness precedes isolation, checkpoint capture, and mutation authorization", () => {
+  const value = fixture();
+  const primaryCheckpoint = { ...value.checkpoint, gitMode: "primary-worktree" as const, branch: "main" };
+  const readOnly = prepareExecution({
+    ...value,
+    checkpoint: primaryCheckpoint,
+    executionSequence: 1,
+    writeAuthorized: false,
+  });
+  assert.equal(readOnly.preparation.readiness.status, "ready");
+  assert.equal(readOnly.preparation.mutationAuthorized, false);
+  assert.deepEqual(readOnly.preparation.authorizationReasons.sort(), ["isolation-required", "write-not-authorized"]);
+  assert.equal(readOnly.context, null);
+  assert.equal(readOnly.session, null);
+  assert.ok(readOnly.preparation.contextBudget.requiredCoreEstimatedTokens > 0);
+
+  const isolated = prepareExecution({ ...value, executionSequence: 1, writeAuthorized: true, requireIsolation: true });
+  assert.equal(isolated.preparation.readiness.status, "ready");
+  assert.equal(isolated.preparation.mutationAuthorized, true);
+  assert.equal(isolated.context?.permissions.sourceWrite, "isolated-worktree-only");
+  assert.ok(isolated.session);
+  assert.deepEqual(isolated.session?.before, value.checkpoint);
+
+  const blocked = prepareExecution({
+    ...value,
+    exploration: { ...value.exploration, status: "blocked", stopReason: "blocked-by-ambiguity" },
+    executionSequence: 1,
+    writeAuthorized: true,
+  });
+  assert.equal(blocked.preparation.readiness.status, "blocked");
+  assert.equal(blocked.preparation.mutationAuthorized, false);
+  assert.equal(blocked.context, null);
+  assert.equal(blocked.session, null);
+});
+
+test("context budgeting preserves an oversized required core and truncates only referenced optional detail", () => {
+  const value = fixture();
+  const longRule = "regra obrigatoria de comportamento preservada no contexto ".repeat(180);
+  const specification = createFeatureSpecification({
+    title: value.specification.title,
+    objective: value.specification.objective,
+    expectedBehaviors: ["A realização permanece persistida com status archived."],
+    businessRules: [longRule],
+    acceptanceCriteria: Array.from({ length: 17 }, (_, index) => ({
+      id: `ac-context-${String(index + 1).padStart(2, "0")}`,
+      source: { kind: "user" as const, reference: null },
+      statement: `Critério ${index + 1}: ${longRule}`,
+      scenario: {
+        given: "uma realização ativa",
+        when: "o endpoint é chamado",
+        then: "o estado obrigatório é preservado",
+      },
+      prohibitedEffects: ["Não remover requisitos para economizar contexto."],
+      verificationMethod: "Verificação comportamental.",
+      priority: "required" as const,
+    })),
+    provenance: { sources: [{ kind: "user", reference: null, revision: null }] },
+  });
+  const plan = buildEngineeringPlan(value.inspection, specification.objective);
+  const explored = exploreProject(value.root, value.inspection, plan, specification);
+  assert.ok(explored.revision);
+  if (!explored.revision) throw new Error("Expected revision.");
+  const input = {
+    root: value.root,
+    inspection: value.inspection,
+    specification,
+    exploration: explored.artifact,
+    revision: explored.revision,
+    checkpoint: { ...value.checkpoint, subjectRevision: explored.artifact.sourceRevision },
+    executionSequence: 1,
+    writeAuthorized: true,
+  };
+  const prepared = prepareExecution(input);
+  assert.equal(prepared.context?.acceptanceCriteria.length, 17);
+  assert.equal(prepared.context?.budget.selectionReason, "required-core-auto-expansion");
+  assert.ok((prepared.context?.budget.requiredCoreEstimatedTokens ?? 0) > 6_000);
+  assert.ok((prepared.context?.budget.maxEstimatedTokens ?? 0) > 6_000);
+  assert.ok((prepared.context?.budget.estimatedTokens ?? Infinity) <= (prepared.context?.budget.maxEstimatedTokens ?? 0));
+  assert.ok((prepared.context?.evidence.length ?? 0) > 0);
+  assert.ok(!prepared.context?.budget.omittedReferences.some((reference) => reference.endsWith("#evidence")));
+  assert.throws(() => prepareExecution({ ...input, maxContextTokens: 6_000 }), /Required execution context core.*exceeds/);
 });
 
 test("execution artifacts are immutable, reject secrets, and sessions preserve bounded append-only attempts", () => {
@@ -324,6 +483,10 @@ test("scope expansion requires known evidence and verification rejects unknown o
     evidenceIds: [evidenceId!],
   });
   assert.equal(isPathAuthorized(context, [expansion], expansion.path), true);
+  assert.equal(isPathAuthorized({
+    ...context,
+    permissions: { ...context.permissions, excludedCandidatePaths: [context.scope.initialPaths[0]!] },
+  }, [], context.scope.initialPaths[0]!), false);
   assert.throws(() => authorizeScopeExpansion(value.root, context, {
     ...expansion,
     path: "outside.ts",

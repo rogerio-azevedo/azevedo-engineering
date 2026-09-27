@@ -26,6 +26,10 @@ export const VerificationPlanItemSchema = VerificationTargetSchema.extend({
 
 export type VerificationPlanItem = z.infer<typeof VerificationPlanItemSchema>;
 
+export type VerificationPlanPolicy = {
+  mandatoryCapabilities?: ReadonlySet<"lint" | "typecheck" | "test" | "build">;
+};
+
 const CAPABILITY_RISK: Record<"lint" | "typecheck" | "test" | "build", string> = {
   lint: "Static defects and repository policy drift.",
   typecheck: "Type contract regressions across changed boundaries.",
@@ -86,6 +90,7 @@ export function verificationTargetId(target: VerificationTarget): string {
 export function resolveVerificationPlan(
   inspection: VerificationInspection,
   classification: TaskClassification,
+  policy: VerificationPlanPolicy = {},
 ): VerificationPlanItem[] {
   const scopes = resolveAffectedScopes(inspection, classification.affectedPaths, classification.targetScopes);
   const plan: VerificationPlanItem[] = scopes.map((scope) => ({
@@ -105,18 +110,26 @@ export function resolveVerificationPlan(
 
   const highRisk = classification.risk === "high-risk" || classification.risk === "critical";
   const requiredCapabilities = new Set<string>();
-  if (classification.type === "business_behavior" || classification.type === "bugfix") requiredCapabilities.add("test");
-  if (inspection.matchedProfiles.includes("profile.typescript")) requiredCapabilities.add("typecheck");
-  if (highRisk) ["lint", "typecheck", "test", "build"].forEach((id) => requiredCapabilities.add(id));
-  if (classification.type === "ui_style") requiredCapabilities.add("build");
+  const availableCapabilities = new Set(inspection.capabilities
+    .filter((capability) => ["detected", "configured"].includes(capability.state))
+    .map((capability) => capability.id));
+  if (classification.type === "business_behavior" || classification.type === "bugfix") {
+    if (availableCapabilities.has("test")) requiredCapabilities.add("test");
+  }
+  if (inspection.matchedProfiles.includes("profile.typescript") && availableCapabilities.has("typecheck")) {
+    requiredCapabilities.add("typecheck");
+  }
+  if (highRisk) for (const id of ["lint", "typecheck", "test", "build"] as const) {
+    if (availableCapabilities.has(id)) requiredCapabilities.add(id);
+  }
+  if (classification.type === "ui_style" && availableCapabilities.has("build")) requiredCapabilities.add("build");
+  for (const capability of policy.mandatoryCapabilities ?? []) requiredCapabilities.add(capability);
 
   for (const scope of scopes) {
     for (const id of ["lint", "typecheck", "test", "build"] as const) {
       const script = findScopedScript(inspection, id, scope);
       const available = Boolean(script);
       const required = requiredCapabilities.has(id);
-      if (!available && !required) continue;
-
       const target = { verifierId: `verify.${id}` as const, scope };
       plan.push({
         ...target,
@@ -130,8 +143,10 @@ export function resolveVerificationPlan(
           ? `Result of ${script?.packagePath ?? scope}/package.json#scripts.${script?.name ?? id} for scope ${scope}.`
           : `Explicit unresolved ${id} capability for scope ${scope}.`,
         reason: available
-          ? `${id} was resolved for affected scope ${scope}${required ? " and is required by task risk" : ""}.`
-          : `${id} is required for affected scope ${scope}, but no script is declared by that package.`,
+          ? `${id} was resolved for affected scope ${scope}${required ? " and is required by the capability-aware verification policy" : ""}.`
+          : required
+            ? `${id} is explicitly mandatory for affected scope ${scope}, but no script is declared by that package.`
+            : `${id} is unavailable for affected scope ${scope}; the gap is recorded but is not automatically mandatory.`,
       });
     }
   }

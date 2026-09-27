@@ -20,7 +20,13 @@ import {
 const fixture = resolve("tests/fixtures/single-repo");
 const monorepo = resolve("tests/fixtures/monorepo");
 
-test("verification planning exposes required capabilities that are unavailable", () => {
+function inspectionWithScripts(scripts: Record<string, string>) {
+  const root = mkdtempSync(`${tmpdir()}/azevedo-verification-capabilities-`);
+  writeFileSync(resolve(root, "package.json"), JSON.stringify({ name: "capabilities", scripts }));
+  return inspectProject(root);
+}
+
+test("verification planning exposes explicitly mandatory capabilities that are unavailable", () => {
   const inspection = inspectProject(fixture);
   const classification = classifyTask({
     taskId: "task-authorization",
@@ -28,12 +34,55 @@ test("verification planning exposes required capabilities that are unavailable",
     type: "security",
     signals: ["authorization"],
   });
-  const plan = resolveVerificationPlan(inspection, classification);
+  const plan = resolveVerificationPlan(inspection, classification, { mandatoryCapabilities: new Set(["lint"]) });
   const lint = plan.find((item) => item.verifierId === "verify.lint");
 
   assert.equal(lint?.required, true);
   assert.equal(lint?.available, false);
   assert.match(lint?.reason ?? "", /no script is declared/);
+});
+
+test("available verification capabilities do not make every absent capability mandatory", () => {
+  const classification = classifyTask({
+    taskId: "task-capability-aware",
+    title: "Adicionar comportamento de negócio",
+    type: "business_behavior",
+    affectedPaths: ["src/feature.ts"],
+  });
+  const withTests = resolveVerificationPlan(
+    inspectionWithScripts({ lint: "eslint .", test: "node --test", build: "tsc" }),
+    classification,
+  );
+  assert.equal(withTests.find((item) => item.verifierId === "verify.typecheck")?.available, false);
+  assert.equal(withTests.find((item) => item.verifierId === "verify.typecheck")?.required, false);
+  assert.equal(withTests.filter((item) => item.required && !item.available).length, 0);
+
+  const withoutTests = resolveVerificationPlan(
+    inspectionWithScripts({ lint: "eslint .", build: "next build" }),
+    classification,
+  );
+  assert.equal(withoutTests.find((item) => item.verifierId === "verify.test")?.available, false);
+  assert.equal(withoutTests.find((item) => item.verifierId === "verify.test")?.required, false);
+  assert.equal(withoutTests.find((item) => item.verifierId === "verify.typecheck")?.required, false);
+  assert.equal(withoutTests.filter((item) => item.required && !item.available).length, 0);
+});
+
+test("an explicit verification requirement remains blocking when its capability is unavailable", () => {
+  const classification = classifyTask({
+    taskId: "task-mandatory-tests",
+    title: "Adicionar comportamento com teste automatizado obrigatório",
+    type: "business_behavior",
+    affectedPaths: ["src/feature.ts"],
+  });
+  const plan = resolveVerificationPlan(
+    inspectionWithScripts({ lint: "eslint .", build: "tsc" }),
+    classification,
+    { mandatoryCapabilities: new Set(["test"]) },
+  );
+  const testTarget = plan.find((item) => item.verifierId === "verify.test");
+  assert.equal(testTarget?.available, false);
+  assert.equal(testTarget?.required, true);
+  assert.match(testTarget?.reason ?? "", /explicitly mandatory/);
 });
 
 test("verification planning selects the affected monorepo package instead of the first script", () => {

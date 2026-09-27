@@ -93,6 +93,12 @@ export function assessExecutionReadiness(input: Omit<PrepareExecutionInput, "exe
   if (!expectedSources.every((source) => revision.basis.sourceArtifactIds.includes(source))) reasons.push({
     code: "artifacts-invalid", message: "Revision provenance does not reference both supplied source artifacts.", blocking: true,
   });
+  const exploredScope = exploration.affectedPaths.filter((item) => item.confidence !== "supporting")
+    .map((item) => item.path).sort();
+  const revisedScope = [...revision.planSnapshot.scope.affectedPaths].sort();
+  if (JSON.stringify(exploredScope) !== JSON.stringify(revisedScope)) reasons.push({
+    code: "artifacts-invalid", message: "Revision scope does not match the supplied Exploration artifact.", blocking: true,
+  });
   if (revision.acceptanceCriteria.length === 0) reasons.push({
     code: "acceptance-missing", message: "Execution requires at least one persisted acceptance criterion.", blocking: true,
   });
@@ -100,8 +106,26 @@ export function assessExecutionReadiness(input: Omit<PrepareExecutionInput, "exe
     code: "exploration-blocked", message: `Exploration is blocked (${exploration.stopReason}).`, blocking: true,
   });
   const executablePaths = exploration.affectedPaths.filter((item) => item.confidence !== "supporting");
-  if (exploration.entryPoints.length === 0 || executablePaths.length === 0) reasons.push({
-    code: "scope-insufficient", message: "No evidence-backed entry point and implementation scope are both available.", blocking: true,
+  const modeHasScope = exploration.featureMode === "existing-feature"
+    ? exploration.entryPoints.length > 0 && executablePaths.length > 0
+    : exploration.featureMode === "greenfield-feature"
+      ? exploration.integrationSurfaces.length > 0 && executablePaths.some((item) => item.kind === "proposed")
+      : false;
+  if (!modeHasScope) reasons.push({
+    code: "scope-insufficient",
+    message: exploration.featureMode === "greenfield-feature"
+      ? "Greenfield execution requires integration surfaces and an evidence-backed proposed scope."
+      : "Existing-feature execution requires an evidence-backed entry point and implementation scope.",
+    blocking: true,
+  });
+  const weakScope = executablePaths.filter((item) =>
+    item.evidenceIds.length === 0 || item.acceptanceCriterionIds.length === 0 ||
+    (item.kind === "proposed" && !["architectural-pattern", "capability-match", "acceptance-criterion-match"].includes(item.basis)),
+  );
+  if (weakScope.length > 0) reasons.push({
+    code: "scope-quality-insufficient",
+    message: `Mutation scope lacks substantive provenance: ${weakScope.map((item) => item.path).join(", ")}.`,
+    blocking: true,
   });
   for (const unknown of unknowns.filter((item) => item.category === "product-decision")) reasons.push({
     code: "product-decision-open", message: unknown.question, blocking: true,
@@ -121,12 +145,6 @@ export function assessExecutionReadiness(input: Omit<PrepareExecutionInput, "exe
   const dirtyPaths = humanDirtyPaths(input.checkpoint);
   if (dirtyPaths.length > 0) reasons.push({
     code: "dirty-human-work", message: `Preserve existing human changes before execution: ${dirtyPaths.join(", ")}.`, blocking: true,
-  });
-  if (input.writeAuthorized !== true) reasons.push({
-    code: "write-not-authorized", message: "Preparation is read-only until isolated source writing is explicitly authorized.", blocking: true,
-  });
-  if (input.requireIsolation !== false && input.checkpoint.gitMode !== "linked-worktree") reasons.push({
-    code: "isolation-required", message: "Source mutation requires a linked Git worktree.", blocking: true,
   });
   return ExecutionReadinessSchema.parse({
     schemaVersion: 1,
@@ -150,11 +168,12 @@ function requiredEnvironmentVariables(specification: FeatureSpecification): stri
 function executionPermission(
   exploration: ExplorationArtifact,
   specification: FeatureSpecification,
-  writeAuthorized: boolean,
+  mutationAuthorized: boolean,
 ): ExecutionPermission {
   return {
-    sourceWrite: writeAuthorized ? "isolated-worktree-only" : "denied",
+    sourceWrite: mutationAuthorized ? "isolated-worktree-only" : "denied",
     allowedPaths: exploration.affectedPaths.filter((item) => item.confidence !== "supporting").map((item) => item.path).sort(),
+    excludedCandidatePaths: exploration.candidates.map((item) => item.path).sort(),
     requiredEnvironmentVariables: requiredEnvironmentVariables(specification),
     allowNetwork: false,
     allowCommit: false,
@@ -179,9 +198,14 @@ function preserveRisk(exploration: ExplorationArtifact, revision: EngineeringPla
   return { class: className, findings: exploration.risk.findings };
 }
 
-function buildExecutionContext(input: PrepareExecutionInput, readiness: ExecutionReadiness): ExecutionContext {
+function buildExecutionContext(
+  input: PrepareExecutionInput,
+  readiness: ExecutionReadiness,
+  mutationAuthorized: boolean,
+): ExecutionContext {
   const { specification, exploration, revision, inspection } = input;
-  const maxEstimatedTokens = input.maxContextTokens ?? 6_000;
+  const defaultEstimatedTokens = 6_000;
+  const explorationReference = `.azevedo/explorations/${exploration.id}.json`;
   const knowledgeManifest = resolveContextManifest(KNOWLEDGE_CATALOG, {
     phase: "implement",
     taskType: revision.planSnapshot.task.type,
@@ -195,6 +219,8 @@ function buildExecutionContext(input: PrepareExecutionInput, readiness: Executio
   const referencedIds = new Set([
     ...exploration.affectedPaths.flatMap((item) => item.evidenceIds),
     ...exploration.entryPoints.flatMap((item) => item.evidenceIds),
+    ...exploration.integrationSurfaces.flatMap((item) => item.evidenceIds),
+    ...exploration.candidates.flatMap((item) => item.evidenceIds),
     ...exploration.contracts.flatMap((item) => item.evidenceIds),
     ...exploration.tests.flatMap((item) => item.evidenceIds),
   ]);
@@ -209,6 +235,8 @@ function buildExecutionContext(input: PrepareExecutionInput, readiness: Executio
     intent: {
       title: specification.title,
       objective: specification.objective,
+      businessRules: [...specification.businessRules],
+      decisions: [...specification.decisions],
       constraints: [...specification.constraints],
       outOfScope: [...specification.outOfScope],
     },
@@ -216,6 +244,11 @@ function buildExecutionContext(input: PrepareExecutionInput, readiness: Executio
     scope: {
       initialPaths: exploration.affectedPaths.filter((item) => item.confidence !== "supporting").map((item) => item.path).sort(),
       entryPoints: exploration.entryPoints.map((item) => item.path).sort(),
+      integrationSurfaces: exploration.integrationSurfaces.map((surface) => ({
+        capability: surface.capability,
+        candidatePaths: surface.candidatePaths.map((candidate) => candidate.path).sort(),
+        acceptanceCriterionIds: [...surface.acceptanceCriterionIds].sort(),
+      })),
       contracts: exploration.contracts.map((item) => item.path).sort(),
       testPaths: exploration.tests.flatMap((item) => item.path ? [item.path] : []).sort(),
       flows: exploration.flows.map((item) => ({ from: item.from, to: item.to, relation: item.relation })),
@@ -232,43 +265,69 @@ function buildExecutionContext(input: PrepareExecutionInput, readiness: Executio
       const evidence = evidenceById.get(id);
       return evidence ? [{ id, path: evidence.path, reason: evidence.reason }] : [];
     }).sort((left, right) => left.id.localeCompare(right.id)),
-    permissions: executionPermission(exploration, specification, input.writeAuthorized === true && readiness.status === "ready"),
+    permissions: executionPermission(exploration, specification, mutationAuthorized),
     stopConditions: [
       "Stop before changing behavior when a product decision is missing.",
       "Stop when a requested path is outside the authorized scope until an evidence-backed expansion is recorded.",
       "Stop after the bounded attempt limit; preserve the failure and diagnosis.",
       "Never commit, push, or persist secret values.",
     ],
-    budget: { maxEstimatedTokens, estimatedTokens: 0, truncated: false },
+    budget: {
+      defaultEstimatedTokens,
+      requestedEstimatedTokens: input.maxContextTokens ?? null,
+      requiredCoreEstimatedTokens: 0,
+      maxEstimatedTokens: input.maxContextTokens ?? defaultEstimatedTokens,
+      estimatedTokens: 0,
+      selectionReason: (input.maxContextTokens === undefined ? "default" : "explicit") as
+        "default" | "explicit" | "required-core-auto-expansion",
+      truncated: false,
+      omittedReferences: [] as string[],
+    },
   };
+  const coreProjection = {
+    ...seed,
+    scope: { ...seed.scope, contracts: [], testPaths: [], flows: [], omittedReferences: [] },
+    knownPatterns: [],
+    budget: { ...seed.budget, estimatedTokens: 0, omittedReferences: [] },
+  };
+  const requiredCoreEstimatedTokens = tokenEstimate(coreProjection);
+  const explicitBudget = input.maxContextTokens;
+  const effectiveBudget = explicitBudget ?? (requiredCoreEstimatedTokens > defaultEstimatedTokens
+    ? Math.ceil(requiredCoreEstimatedTokens * 1.15) : defaultEstimatedTokens);
+  seed.budget.requiredCoreEstimatedTokens = requiredCoreEstimatedTokens;
+  seed.budget.maxEstimatedTokens = effectiveBudget;
+  seed.budget.selectionReason = explicitBudget !== undefined
+    ? "explicit"
+    : requiredCoreEstimatedTokens > defaultEstimatedTokens ? "required-core-auto-expansion" : "default";
+  const maxEstimatedTokens = effectiveBudget;
   const optionalCollections: Array<{ values: unknown[]; reference: string; remove: () => void }> = [];
-  for (let index = seed.evidence.length - 1; index >= 0; index -= 1) optionalCollections.push({
-    values: seed.evidence, reference: `evidence:${seed.evidence[index]?.id ?? index}`, remove: () => { seed.evidence.splice(index, 1); },
-  });
   for (let index = seed.scope.contracts.length - 1; index >= 0; index -= 1) optionalCollections.push({
-    values: seed.scope.contracts, reference: `contract:${seed.scope.contracts[index] ?? index}`, remove: () => { seed.scope.contracts.splice(index, 1); },
+    values: seed.scope.contracts, reference: `${explorationReference}#contracts`, remove: () => { seed.scope.contracts.splice(index, 1); },
   });
   for (let index = seed.scope.testPaths.length - 1; index >= 0; index -= 1) optionalCollections.push({
-    values: seed.scope.testPaths, reference: `test:${seed.scope.testPaths[index] ?? index}`, remove: () => { seed.scope.testPaths.splice(index, 1); },
+    values: seed.scope.testPaths, reference: `${explorationReference}#tests`, remove: () => { seed.scope.testPaths.splice(index, 1); },
   });
   for (let index = seed.knownPatterns.length - 1; index >= 0; index -= 1) optionalCollections.push({
-    values: seed.knownPatterns, reference: `pattern:${seed.knownPatterns[index]?.path ?? index}`, remove: () => { seed.knownPatterns.splice(index, 1); },
+    values: seed.knownPatterns, reference: `${explorationReference}#similarImplementations`, remove: () => { seed.knownPatterns.splice(index, 1); },
   });
   for (let index = seed.scope.flows.length - 1; index >= 0; index -= 1) optionalCollections.push({
-    values: seed.scope.flows, reference: `flow:${seed.scope.flows[index]?.from ?? index}`, remove: () => { seed.scope.flows.splice(index, 1); },
+    values: seed.scope.flows, reference: `${explorationReference}#flows`, remove: () => { seed.scope.flows.splice(index, 1); },
   });
   let estimatedTokens = tokenEstimate(seed);
   for (const optional of optionalCollections) {
     if (estimatedTokens <= maxEstimatedTokens) break;
     if (optional.values.length === 0) continue;
     optional.remove();
-    seed.scope.omittedReferences.push(optional.reference);
+    if (!seed.budget.omittedReferences.includes(optional.reference)) seed.budget.omittedReferences.push(optional.reference);
     seed.budget.truncated = true;
     estimatedTokens = tokenEstimate(seed);
   }
   seed.budget.estimatedTokens = tokenEstimate(seed);
+  if (requiredCoreEstimatedTokens > maxEstimatedTokens) throw new Error(
+    `Required execution context core is ${requiredCoreEstimatedTokens} tokens and exceeds the explicit ${maxEstimatedTokens}-token budget.`,
+  );
   if (seed.budget.estimatedTokens > maxEstimatedTokens) throw new Error(
-    `Required execution context exceeds the ${maxEstimatedTokens}-token budget; increase it explicitly.`,
+    `Execution context remains ${seed.budget.estimatedTokens} tokens after optional-content truncation and exceeds the ${maxEstimatedTokens}-token budget; omitted references were preserved.`,
   );
   const identity = { ...seed, id: undefined, budget: { ...seed.budget, estimatedTokens: 0 } };
   return ExecutionContextSchema.parse({ ...seed, id: `execution-context-${stableDigest(identity)}` });
@@ -327,7 +386,11 @@ export function renderExecutionInstructions(context: ExecutionContext): string {
     "# INTENT", `${context.intent.title}\n\n${context.intent.objective}`,
     "# EVIDENCE", lines(context.evidence.map((item) => `${item.id}: ${item.path} — ${item.reason}`)),
     "# ACCEPTANCE CRITERIA", lines(context.acceptanceCriteria.map((item) => `${item.id}: ${item.statement}`)),
-    "# SCOPE", lines(context.scope.initialPaths),
+    "# SCOPE", lines([
+      ...context.scope.initialPaths,
+      ...context.scope.integrationSurfaces.map((surface) =>
+        `integration:${surface.capability} -> ${surface.candidatePaths.join(", ")}`),
+    ]),
     "# KNOWN PATTERNS", lines([
       ...context.scope.flows.map((item) => `${item.from} ${item.relation} ${item.to}`),
       ...context.knownPatterns.map((item) => `${item.path}: ${item.pattern}`),
@@ -335,6 +398,8 @@ export function renderExecutionInstructions(context: ExecutionContext): string {
     "# RISKS", lines(context.risks.findings.map((item) => `${item.signal}: ${item.reason}`)),
     "# UNKNOWN TECHNICAL QUESTIONS", lines(context.technicalUnknowns.map((item) => `${item.category}: ${item.question}`)),
     "# IMPLEMENTATION CONSTRAINTS", lines([
+      ...context.intent.businessRules,
+      ...context.intent.decisions,
       ...context.intent.constraints,
       `Source write: ${context.permissions.sourceWrite}`,
       "Do not commit or push.",
@@ -348,9 +413,17 @@ export function renderExecutionInstructions(context: ExecutionContext): string {
 export function prepareExecution(input: PrepareExecutionInput): PreparedExecution {
   const readiness = assessExecutionReadiness(input);
   const canBuildContext = !readiness.reasons.some((reason) => [
-    "artifacts-invalid", "acceptance-missing", "exploration-blocked", "scope-insufficient", "source-revision-changed",
+    "artifacts-invalid", "acceptance-missing", "exploration-blocked", "scope-insufficient",
+    "scope-quality-insufficient", "source-revision-changed",
   ].includes(reason.code));
-  const context = canBuildContext ? buildExecutionContext(input, readiness) : null;
+  const authorizationReasons: ExecutionPreparation["authorizationReasons"] = [];
+  if (readiness.status !== "ready") authorizationReasons.push("readiness-blocked");
+  if (input.writeAuthorized !== true) authorizationReasons.push("write-not-authorized");
+  if (input.requireIsolation !== false && input.checkpoint.gitMode !== "linked-worktree") authorizationReasons.push("isolation-required");
+  if (!input.checkpoint.subjectRevision) authorizationReasons.push("checkpoint-not-captured");
+  const mutationAuthorized = authorizationReasons.length === 0;
+  const contextCandidate = canBuildContext ? buildExecutionContext(input, readiness, mutationAuthorized) : null;
+  const context = mutationAuthorized ? contextCandidate : null;
   const session = context ? createSession(input, context) : null;
   const preparationId = `preparation-${stableDigest({
     revisionId: input.revision.id,
@@ -364,6 +437,18 @@ export function prepareExecution(input: PrepareExecutionInput): PreparedExecutio
     id: preparationId,
     mode: "prepare",
     writeAuthorized: input.writeAuthorized === true,
+    mutationAuthorized,
+    authorizationReasons,
+    contextBudget: contextCandidate?.budget ?? {
+      defaultEstimatedTokens: 6_000,
+      requestedEstimatedTokens: input.maxContextTokens ?? null,
+      requiredCoreEstimatedTokens: 0,
+      maxEstimatedTokens: input.maxContextTokens ?? 6_000,
+      estimatedTokens: 0,
+      selectionReason: input.maxContextTokens === undefined ? "default" : "explicit",
+      truncated: false,
+      omittedReferences: [],
+    },
     readiness,
     contextId: context?.id ?? null,
     sessionId: session?.id ?? null,

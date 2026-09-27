@@ -1,6 +1,6 @@
 # ECC Gap Analysis Against Azevedo Engineering v0.1-v0.6
 
-> Historical audit baseline: sections 1–7 describe the repository before v0.4.1. v0.4.1 closed the Knowledge/Context foundation and revision lineage; v0.5 closed deterministic Specification Intake and Evidence-backed Exploration. v0.6 closes Guided Execution preparation, sessions and trusted package-script verification. Autonomous provider execution, review runtime and broader stack knowledge remain open.
+> Historical audit baseline: sections 1–7 describe the repository before v0.4.1. v0.4.1 closed the Knowledge/Context foundation and revision lineage; v0.5 closed deterministic Specification Intake and Evidence-backed Exploration; v0.6 closed Guided Execution preparation, sessions and trusted package-script verification. v0.6.1 hardens those capabilities from real dogfood evidence. Autonomous provider execution, review runtime and broader stack knowledge remain open.
 
 ## Executive Summary
 
@@ -276,6 +276,19 @@ The implementation also adds a versioned `FeatureSpecification`, immutable persi
 - trusted-script verification executor with EvidenceRecord output, deny rules and no shell;
 - subject-revision invalidation, HEAD/status checkpoints, dirty-work protection and secret-value rejection;
 - no provider API, autonomous coding loop, commit, push or external mutation.
+
+### v0.6.1 — Dogfood hardening (implemented)
+
+- existing-feature versus greenfield exploration, with acceptance-linked integration surfaces and evidence-backed proposed boundaries;
+- lexical candidates separated from substantive paths and direct tests;
+- adaptive, recorded, bounded exploration passes;
+- unavailable verification capabilities separated from mandatory requirements;
+- formal blocked/partial Plan Revisions and scope-provenance readiness gates;
+- coordinated Project Group plan/readiness without adding a multi-agent orchestrator;
+- read-only readiness separated from isolation/checkpoint/mutation authorization;
+- required context core preserved through recorded auto-expansion or explicit budget failure.
+
+No new ECC harvest was performed. The two existing Exploration Knowledge Units were refined with the already pinned snapshot `e482e579415fde18357cafce70f177ae19fd7f03`; no new unit or provenance was invented.
 
 ### v0.7 — Review and security system
 

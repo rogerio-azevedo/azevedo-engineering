@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.6 preserva o pipeline determinístico até Exploration e adiciona Guided Execution: readiness explicável, contexto limitado, sessões persistentes e verification segura, sem acoplar o core a um provider.
+Engineering harness reutilizável para coding agents. A v0.6.1 endurece a Guided Execution com exploração greenfield, relevância baseada em evidência, verification coerente com as capabilities reais, preparação read-only e representação coordenada de features cross-repo, sem acoplar o core a um provider.
 
 ## Inspect
 
@@ -78,7 +78,7 @@ azevedo explore . --plan plan-adicionar-comportamento-12345678 --spec ./feature-
 
 `explore` recebe um plano persistido e uma Specification JSON opcional. Sem `--spec`, cria uma Specification mínima exclusivamente a partir da task do plano; campos ausentes continuam ausentes. Com `--spec`, preserva objetivo, regras, cenários, decisões, restrições, critérios de aceite, fora de escopo, questões abertas e proveniência fornecidos. O `objective` precisa corresponder exatamente à task do plan, impedindo associação acidental entre features diferentes.
 
-A Specification é autoridade de intenção. O código é evidência do comportamento atual e nunca vira silenciosamente regra de negócio. A exploração faz inventário estrutural, expansão terminológica determinística, busca de entry points, flows, implementações similares, contratos/consumidores, testes, dependências, riscos e unknowns. O resultado informa `ready`, `partial` ou `blocked` e sempre registra uma razão de parada.
+A Specification é autoridade de intenção. O código é evidência do comportamento atual e nunca vira silenciosamente regra de negócio. A exploração distingue `existing-feature`, `greenfield-feature` e `uncertain`. Features existentes seguem entry points, flows, dependencies, consumers e testes. Features greenfield derivam capabilities dos critérios de aceite, localizam `integrationSurfaces` existentes e propõem somente boundaries sustentadas por padrões arquiteturais citados. Correspondência lexical isolada permanece `candidate` e não autoriza mutation. O budget é consumido em passes de reconnaissance, targeted exploration e resolution, sempre com razão de parada.
 
 Sem `--dry-run`, artifacts imutáveis são criados somente após preflight de conflitos:
 
@@ -98,11 +98,11 @@ azevedo execute . --revision plan-revision-1-12345678 --prepare --json
 azevedo execute ./isolated-worktree --revision plan-revision-1-12345678 --prepare --authorize-isolated-write
 ```
 
-Na v0.6, `execute` aceita uma `EngineeringPlanRevision`, pois ela é o primeiro artifact que reúne intenção original, Specification, Exploration, acceptance criteria, scope enriquecido, risco e Verification Plan. O único modo público é `--prepare`: ele avalia `ready | blocked`, produz um `ExecutionContext` compacto e abre uma `ExecutionSession`, mas nunca chama um modelo nem modifica source code.
+`execute` aceita uma `EngineeringPlanRevision`, pois ela é o primeiro artifact que reúne intenção original, Specification, Exploration, acceptance criteria, scope enriquecido, risco e Verification Plan. O único modo público é `--prepare`: primeiro avalia `ready | blocked` sem confundir readiness com autorização. `ExecutionContext` e `ExecutionSession` só são liberados quando readiness está `ready`, a execução está numa linked worktree, o checkpoint foi capturado e `--authorize-isolated-write` foi fornecido. O comando nunca chama um modelo nem modifica source code.
 
-`--authorize-isolated-write` somente registra a boundary que um coding agent poderá consumir depois. Readiness para mutação exige linked worktree, source revision inalterada, ausência de trabalho humano fora dos arquivos do harness, critérios de aceite, scope suficiente, verification obrigatória disponível e nenhuma decisão de produto aberta. Sem essa autorização, o contexto é read-only e a razão `write-not-authorized` permanece explícita.
+Readiness exige source revision inalterada, ausência de trabalho humano fora dos arquivos do harness, critérios de aceite, scope com proveniência suficiente, verification obrigatória disponível e nenhuma decisão de produto aberta. Autorização de mutation é uma segunda decisão: sem linked worktree e `--authorize-isolated-write`, a preparation registra `authorizationReasons`, mas o readiness técnico pode continuar `ready` e nenhuma session é criada.
 
-O contexto contém instruções estruturadas (`INTENT`, `EVIDENCE`, `ACCEPTANCE CRITERIA`, `SCOPE`, `KNOWN PATTERNS`, `RISKS`, `UNKNOWN TECHNICAL QUESTIONS`, `IMPLEMENTATION CONSTRAINTS`, `VERIFICATION`, `STOP CONDITIONS`). O budget padrão é 6.000 tokens estimados; conteúdo opcional é removido por prioridade e permanece referenciado.
+O contexto contém instruções estruturadas (`INTENT`, `EVIDENCE`, `ACCEPTANCE CRITERIA`, `SCOPE`, `KNOWN PATTERNS`, `RISKS`, `UNKNOWN TECHNICAL QUESTIONS`, `IMPLEMENTATION CONSTRAINTS`, `VERIFICATION`, `STOP CONDITIONS`). O default é 6.000 tokens estimados, mas o core obrigatório nunca é removido para caber: sem budget explícito, o limite efetivo pode crescer de forma registrada; com limite explícito insuficiente, a preparação falha. Conteúdo opcional é removido primeiro e permanece referenciado.
 
 Sem `--dry-run`, apenas artifacts do harness são gravados de forma create-only:
 
@@ -114,7 +114,7 @@ Sem `--dry-run`, apenas artifacts do harness são gravados de forma create-only:
 
 O core expõe uma interface provider-neutral `CodingAgent`, mas não inclui integração programática com Codex ou outro provider. Tentativas e snapshots são append-only, recovery é limitado a três attempts, scope adicional exige razão e evidence ids, e completion exige checkpoint final, attempt bem-sucedido, verification obrigatória aprovada e todos os critérios em estado `verified`.
 
-O Verification Runtime executa somente scripts encontrados pela inspection, com argumentos fixos e `shell: false`. Targets desconhecidos, indisponíveis ou comandos destrutivos são bloqueados. Values de secrets nunca pertencem aos artifacts; somente nomes de environment variables são permitidos.
+O Verification Runtime executa somente scripts encontrados pela inspection, com argumentos fixos e `shell: false`. Capability disponível e requirement obrigatória são conceitos distintos: uma capability ausente é registrada, mas só bloqueia quando a Specification ou a política aplicável a torna obrigatória. Targets desconhecidos, requirements indisponíveis e comandos destrutivos são bloqueados. Values de secrets nunca pertencem aos artifacts; somente nomes de environment variables são permitidos.
 
 Exit codes:
 

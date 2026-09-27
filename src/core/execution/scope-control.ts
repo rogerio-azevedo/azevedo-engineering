@@ -22,7 +22,9 @@ export function authorizeScopeExpansion(
 }
 
 export function isPathAuthorized(context: ExecutionContext, expansions: readonly ScopeExpansion[], path: string): boolean {
-  return [...context.permissions.allowedPaths, ...expansions.map((item) => item.path)].some((allowed) =>
+  if (expansions.some((item) => path === item.path || path.startsWith(`${item.path}/`))) return true;
+  if (context.permissions.excludedCandidatePaths.some((excluded) => path === excluded || path.startsWith(`${excluded}/`))) return false;
+  return context.permissions.allowedPaths.some((allowed) =>
     path === allowed || path.startsWith(`${allowed}/`) || allowed.startsWith(`${path}/`),
   );
 }
