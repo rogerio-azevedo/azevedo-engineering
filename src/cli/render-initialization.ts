@@ -41,6 +41,8 @@ export function renderHumanInitialization(report: InitReport): string {
     lines.push("Status: BLOCKED", "No files were modified.");
   } else if (report.dryRun) {
     lines.push("No files were modified.");
+  } else if (report.outcome === "already-initialized") {
+    lines.push("Already initialized. No files were modified.");
   } else {
     if (group) lines.push(`Projects initialized: ${report.summary.projects}`);
     lines.push("Initialization completed.");

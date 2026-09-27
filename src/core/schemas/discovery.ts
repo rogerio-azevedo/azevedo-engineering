@@ -10,6 +10,8 @@ export const DetectionStateSchema = z.enum([
 
 export const PackageManagerSchema = z.enum(["npm", "pnpm", "yarn", "bun"]);
 
+export const ProjectTopologySchema = z.enum(["single-repo", "monorepo"]);
+
 export const PackageManagerDetectionSchema = z.object({
   state: z.enum(["detected", "unknown", "ambiguous"]),
   value: PackageManagerSchema.nullable(),
@@ -19,7 +21,7 @@ export const PackageManagerDetectionSchema = z.object({
 
 export const TopologyDetectionSchema = z.object({
   state: z.enum(["detected", "unknown", "ambiguous"]),
-  value: z.enum(["single-repo", "monorepo"]).nullable(),
+  value: ProjectTopologySchema.nullable(),
   evidence: z.array(z.string()),
 });
 

@@ -29,7 +29,7 @@ export const InitReportSchema = z.object({
   dryRun: z.boolean(),
   blocked: z.boolean(),
   applied: z.boolean(),
-  outcome: z.enum(["blocked", "dry-run", "initialized"]),
+  outcome: z.enum(["blocked", "dry-run", "initialized", "already-initialized"]),
   projects: z.array(ProjectInitReportSchema).min(1),
   summary: InitSummarySchema,
 });
@@ -71,15 +71,22 @@ export function createInitReport(plan: InitPlan, dryRun: boolean): InitReport {
   const operations = plan.kind === "project"
     ? plan.operations
     : plan.projects.flatMap((project) => project.plan.operations);
+  const summary = { projects: projects.length, ...summarize(operations) };
   return InitReportSchema.parse({
     schemaVersion: 1,
     kind: plan.kind,
     root: plan.root,
     dryRun,
     blocked: plan.blocked,
-    applied: !dryRun && !plan.blocked,
-    outcome: plan.blocked ? "blocked" : dryRun ? "dry-run" : "initialized",
+    applied: !dryRun && !plan.blocked && summary.create > 0,
+    outcome: plan.blocked
+      ? "blocked"
+      : dryRun
+        ? "dry-run"
+        : summary.create > 0
+          ? "initialized"
+          : "already-initialized",
     projects,
-    summary: { projects: projects.length, ...summarize(operations) },
+    summary,
   });
 }

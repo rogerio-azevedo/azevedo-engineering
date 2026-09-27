@@ -34,7 +34,10 @@ function inferTaskType(input: ReturnType<typeof TaskInputSchema.parse>): TaskCla
   if (paths.length > 0 && paths.every((path) => /\.(css|scss|sass|less)$/.test(path))) return "ui_style";
   if (/\b(auth|authorization|permission|credential|secret|security|autenticação|autorização|permissão|credencial|segredo|segurança)\b/.test(text)) return "security";
   if (/\b(architecture|boundary|new package|new app|integration strategy|arquitetura|fronteira|novo pacote|novo app|novo aplicativo|estratégia de integração)\b/.test(text)) return "architecture";
-  if (/\b(dependency|upgrade package|add package|dependência|atualizar pacote|adicionar pacote)\b/.test(text)) return "dependency_change";
+  if (
+    /\b(dependency|upgrade package|add package|dependência|atualizar pacote|adicionar pacote)\b/.test(text) ||
+    /\b(update|upgrade|atualizar)\s+(?:o\s+|a\s+)?prisma\b/.test(text)
+  ) return "dependency_change";
   if (input.reproducibleBug || /\b(bug|regression|fix|defect|erro|falha|corrigir|defeito)\b/.test(text)) return "bugfix";
   if (/\b(refactor|rename|restructure|cleanup|refatorar|refatoração|renomear|reestruturar|limpeza)\b/.test(text)) return "refactor";
   if (/\b(feature|behavior|behaviour|business rule|regra de negócio|nova regra|comportamento|funcionalidade)\b/.test(text)) return "business_behavior";

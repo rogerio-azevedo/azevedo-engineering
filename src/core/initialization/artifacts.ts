@@ -23,7 +23,7 @@ export const AZEVEDO_LOCAL_README_CONTENT = `# Azevedo Engineering local state
 
 This directory is reserved for local state and artifacts produced by Azevedo Engineering capabilities.
 
-Only files introduced by an explicit Azevedo Engineering operation should be stored here. This bootstrap file is versionable; future evidence or cache policies will be defined by the capabilities that need them.
+Engineering plans are stored as canonical JSON artifacts under \`plans/\`. Only files introduced by an explicit Azevedo Engineering operation should be stored here. This bootstrap file is versionable; future evidence or cache policies will be defined by the capabilities that need them.
 `;
 
 export function createCoreInitializationArtifacts(adapter: string): InitializationArtifact[] {

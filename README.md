@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.3 oferece inspection conservadora e inicialização project-local segura.
+Engineering harness reutilizável para coding agents. A v0.4 oferece inspection conservadora, initialization segura e Engineering Plans determinísticos.
 
 ## Inspect
 
@@ -42,12 +42,27 @@ O comando é idempotente: conteúdo já idêntico é `UNCHANGED` e não é reesc
 
 Em project groups, todos os projetos filhos são planejados e validados antes da primeira escrita. Cada filho recebe sua própria instalação e nada é criado na raiz agregadora. Um conflito em qualquer filho bloqueia o grupo inteiro.
 
+Quando uma segunda execução não precisa criar nada, o human output informa `Already initialized` e o JSON retorna `outcome: "already-initialized"` sem reescrever arquivos.
+
+## Plan
+
+```bash
+azevedo plan . --task "Adicionar endpoint para arquivar uma realização"
+azevedo plan . --task "Adicionar endpoint para arquivar uma realização" --json
+```
+
+`plan` exige um projeto já inicializado, não altera código e não executa comandos do projeto. O planner v0.4 é determinístico e não usa LLM. Ele combina a task com inspection, risk classification, TDD contextual e capabilities reais, preservando unknowns em vez de inventar arquivos ou comandos.
+
+O contrato canônico é JSON e fica em `.azevedo/plans/<plan-id>.json`. A mesma task e scope produzem o mesmo ID e conteúdo: a segunda execução é `UNCHANGED`; conteúdo diferente sob o mesmo ID é `CONFLICT` e nunca é sobrescrito.
+
+Project groups não são planejados automaticamente. O usuário precisa selecionar explicitamente um projeto filho para evitar que o Azevedo adivinhe se a tarefa pertence ao backend, frontend ou ambos.
+
 Exit codes:
 
 | Código | Significado |
 | --- | --- |
-| `0` | Inspection ou initialization concluída; também dry-run válido |
-| `1` | Erro operacional ou plano de init bloqueado por conflito |
+| `0` | Inspection, initialization ou planning concluído; também dry-run válido |
+| `1` | Erro operacional ou conflito que bloqueia init/plan |
 | `2` | Comando, opção ou argumento inválido |
 
 ## Desenvolvimento local
@@ -58,10 +73,11 @@ pnpm build
 node dist/src/cli.js inspect
 node dist/src/cli.js inspect --json
 node dist/src/cli.js init . --dry-run
+node dist/src/cli.js plan . --task "Atualizar documentação"
 pnpm verify
 ```
 
-O package expõe o bin `azevedo`, preparando execução futura via `npx @azevedo/engineering inspect` e `npx @azevedo/engineering init`. A publicação no NPM ainda não faz parte desta versão.
+O package expõe o bin `azevedo`, preparando execução futura via `npx @azevedo/engineering inspect`, `init` e `plan`. A publicação no NPM ainda não faz parte desta versão.
 
 Esta versão também mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Update, outros comandos mutáveis, plugin, hooks e MCP ainda não foram implementados.
 

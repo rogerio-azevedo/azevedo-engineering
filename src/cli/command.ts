@@ -6,8 +6,16 @@ import { applyInitPlan } from "../core/initialization/init-apply.js";
 import { buildInitPlan } from "../core/initialization/init-plan.js";
 import { createInitReport } from "../core/initialization/init-report.js";
 import { createInspectResult } from "../core/inspection/inspect-result.js";
+import { buildEngineeringPlan } from "../core/planning/engineering-plan.js";
+import { validateInitializedProject } from "../core/planning/initialized-project.js";
+import {
+  applyPlanArtifactOperation,
+  buildPlanArtifactOperation,
+  createPlanCommandReport,
+} from "../core/planning/plan-persistence.js";
 import { renderHumanInspection } from "./render-inspection.js";
 import { renderHumanInitialization } from "./render-initialization.js";
+import { renderHumanPlan } from "./render-plan.js";
 
 export const EXIT_SUCCESS = 0;
 export const EXIT_OPERATIONAL_ERROR = 1;
@@ -35,10 +43,12 @@ class CliError extends Error {
 const GENERAL_HELP = `Usage:
   azevedo inspect [path] [--json]
   azevedo init [path] [--dry-run] [--json]
+  azevedo plan [path] --task <task> [--json]
 
 Commands:
   inspect    Inspect a project without modifying it
   init       Safely initialize Azevedo Engineering in a recognized project
+  plan       Create a deterministic engineering plan for an initialized project
 
 Options:
   --help     Show help
@@ -68,6 +78,18 @@ Options:
   --help     Show help
 `;
 
+const PLAN_HELP = `Usage:
+  azevedo plan [path] --task <task> [--json]
+
+Arguments:
+  path       Initialized project directory (default: current directory)
+
+Options:
+  --task     Required engineering task description
+  --json     Output machine-readable JSON
+  --help     Show help
+`;
+
 type InspectArguments = {
   help: boolean;
   json: boolean;
@@ -76,6 +98,10 @@ type InspectArguments = {
 
 type InitArguments = InspectArguments & {
   dryRun: boolean;
+};
+
+type PlanArguments = InspectArguments & {
+  task: string | undefined;
 };
 
 function parseInspectArguments(args: readonly string[]): InspectArguments {
@@ -116,6 +142,33 @@ function parseInitArguments(args: readonly string[]): InitArguments {
   }
 
   return { help, json, dryRun, path: projectPath ?? "." };
+}
+
+function parsePlanArguments(args: readonly string[]): PlanArguments {
+  let help = false;
+  let json = false;
+  let projectPath: string | undefined;
+  let task: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--help" || argument === "-h") help = true;
+    else if (argument === "--json") json = true;
+    else if (argument === "--task") {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new CliError("Option --task requires a non-empty value.", EXIT_INVALID_USAGE);
+      }
+      if (task !== undefined) throw new CliError("Option --task may only be provided once.", EXIT_INVALID_USAGE);
+      task = value.trim();
+      index += 1;
+    } else if (argument?.startsWith("-")) throw new CliError(`Unknown option: ${argument}`, EXIT_INVALID_USAGE);
+    else if (projectPath !== undefined) throw new CliError(`Unexpected argument: ${argument}`, EXIT_INVALID_USAGE);
+    else projectPath = argument;
+  }
+
+  if (!help && !task) throw new CliError("Option --task is required and must not be empty.", EXIT_INVALID_USAGE);
+  return { help, json, path: projectPath ?? ".", task };
 }
 
 function describeError(error: unknown): string {
@@ -169,7 +222,7 @@ export function runCli(
       return EXIT_SUCCESS;
     }
 
-    if (command !== "inspect" && command !== "init") {
+    if (command !== "inspect" && command !== "init" && command !== "plan") {
       throw new CliError(`Unknown command: ${command}`, EXIT_INVALID_USAGE);
     }
 
@@ -192,6 +245,40 @@ export function runCli(
         ? `${JSON.stringify(result, null, 2)}\n`
         : renderHumanInspection(result));
       return EXIT_SUCCESS;
+    }
+
+    if (command === "plan") {
+      const planArguments = parsePlanArguments(commandArguments);
+      if (planArguments.help) {
+        io.stdout(PLAN_HELP);
+        return EXIT_SUCCESS;
+      }
+
+      const root = resolveProjectRoot(planArguments.path, options.cwd);
+      try {
+        const inspection = createInspectResult(root);
+        if (inspection.kind === "project-group") {
+          const choices = inspection.projects.map((project) => `  ${project.relativePath}`).join("\n");
+          throw new Error(
+            `Target is a project group with ${inspection.projects.length} projects.\n` +
+            `Choose a project:\n${choices}\nRun plan against the specific project path.`,
+          );
+        }
+        if (inspection.topology.state === "unknown") {
+          throw new Error("There is not enough evidence of a recognizable project to build a plan.");
+        }
+        validateInitializedProject(root);
+        const plan = buildEngineeringPlan(inspection, planArguments.task ?? "");
+        const operation = buildPlanArtifactOperation(root, plan);
+        if (operation.action === "create") applyPlanArtifactOperation(root, operation);
+        const report = createPlanCommandReport(plan, operation);
+        io.stdout(planArguments.json
+          ? `${JSON.stringify(report, null, 2)}\n`
+          : renderHumanPlan(report));
+        return report.outcome === "conflict" ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
+      } catch (error) {
+        throw new CliError(`Planning failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+      }
     }
 
     const initArguments = parseInitArguments(commandArguments);

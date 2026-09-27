@@ -4,6 +4,8 @@ import type { ProjectInspection } from "../schemas/discovery.js";
 import type { TaskClassification } from "../schemas/task.js";
 import { ComponentIdSchema } from "../schemas/component.js";
 
+type VerificationInspection = Omit<ProjectInspection, "inspectedAt">;
+
 export const VerificationTargetSchema = z.object({
   verifierId: ComponentIdSchema,
   scope: z.string().min(1),
@@ -41,7 +43,7 @@ function containsPath(scope: string, path: string): boolean {
 }
 
 function resolveAffectedScopes(
-  inspection: ProjectInspection,
+  inspection: VerificationInspection,
   affectedPaths: readonly string[],
   targetScopes: readonly string[],
 ): string[] {
@@ -69,7 +71,7 @@ function scriptMatchesCapability(name: string, capability: "lint" | "typecheck" 
 }
 
 function findScopedScript(
-  inspection: ProjectInspection,
+  inspection: VerificationInspection,
   capability: "lint" | "typecheck" | "test" | "build",
   scope: string,
 ): ProjectInspection["scripts"][number] | undefined {
@@ -82,7 +84,7 @@ export function verificationTargetId(target: VerificationTarget): string {
 }
 
 export function resolveVerificationPlan(
-  inspection: ProjectInspection,
+  inspection: VerificationInspection,
   classification: TaskClassification,
 ): VerificationPlanItem[] {
   const scopes = resolveAffectedScopes(inspection, classification.affectedPaths, classification.targetScopes);

@@ -1,6 +1,6 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Safe Project Initialization v0.3
+- Status: base arquitetural aprovada; Engineering Plan v0.4
 - Atualização: 2026-09-26
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
@@ -19,8 +19,8 @@ O sistema separa quatro preocupações:
 
 - um **core canônico e independente de harness**, com contratos, políticas, workflows, classificação de risco, descoberta de projeto e verification;
 - **adapters finos**, que materializam apenas o necessário nas superfícies de Codex, Cursor e Claude Code;
-- um **runtime determinístico**, exposto inicialmente pelo Inspect CLI e futuramente ampliado via CLI/NPM, que inspeciona o projeto, resolve capacidades e gates e registra evidências;
-- **artefatos gerados**, que não são fonte de verdade e podem ser regenerados de forma controlada.
+- um **runtime determinístico**, exposto por CLI/NPM, que inspeciona o projeto, inicializa a fundação local, cria planos, resolve capacidades e gates e registra evidências;
+- **artefatos de adapter gerados**, que não substituem o core, e **contratos runtime persistentes**, como Engineering Plans JSON, validados antes de consumo futuro.
 
 O primeiro adapter é o Codex. A fundação não depende de recursos exclusivos dele. O Codex deve receber um `AGENTS.md` curto, papéis especializados somente quando úteis e contexto progressivo. Hooks, plugin, MCP e multi-agent são capacidades opcionais; nunca são a única forma de aplicar uma regra ou cumprir o Definition of Done.
 
@@ -39,9 +39,9 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.3
+### 2.2 Não objetivos da v0.4
 
-- Implementar comandos além de `inspect` e `init` ou publicar o pacote NPM.
+- Implementar comandos além de `inspect`, `init` e `plan` ou publicar o pacote NPM.
 - Construir um plugin Codex completo.
 - Implementar hooks, MCP, auto-update ou runtime completo de continuous learning.
 - Criar um catálogo amplo de agents, skills e rules.
@@ -244,7 +244,7 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.3 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.4 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
@@ -281,7 +281,27 @@ Inspection → Initialization Planning → Conflict Validation → Application
 
 O core recebe artefatos de adapter sem depender estruturalmente de Codex. Na v0.3, o adapter Codex fornece somente o bootstrap `AGENTS.md`; config declara `engineering.adapter: codex` como intenção, enquanto stack e package manager continuam vindos de discovery.
 
-### 5.10 Classificação de tarefa e risco
+### 5.10 Engineering Plans
+
+O projeto segue a progressão operacional:
+
+```text
+Inspect → Init → Plan
+                  ↓
+          Engineering Plan
+                  ↓
+          future executor
+                  ↓
+       future verification
+```
+
+`plan` é o contrato persistente entre understanding e execution. Ele funciona somente em project reconhecido e inicializado; project groups exigem seleção explícita de um filho. O plano canônico é JSON em `.azevedo/plans/<plan-id>.json`, sem timestamp ou path absoluto gerado.
+
+O pipeline é `Task → Inspect Project → Resolve Scope → Classify Risk → Build Engineering Plan → Persist Plan → Render Result`. O planner reutiliza os contratos de risk, TDD e verification existentes, não executa comandos e não usa LLM. Affected paths permanecem vazios até repository exploration fornecer evidência. Unknowns são explícitos e obrigam research antes de implementation.
+
+IDs derivam deterministicamente da task normalizada, topologia e scope inicial. Persistência é create-only: conteúdo idêntico é unchanged; conteúdo diferente sob o mesmo ID é conflict. Somente `.azevedo/plans/` pode ser criado ou modificado. O plano descreve intenção; execução, agents especializados e coleta de evidence continuam futuros.
+
+### 5.11 Classificação de tarefa e risco
 
 O resolver combina tipo da tarefa, paths afetados e sinais concretos. As classes conceituais iniciais são:
 
@@ -294,7 +314,7 @@ Os nomes podem evoluir antes de estabilizar a API, mas não haverá um seletor m
 
 Classificação estruturada fornecida pelo coding agent tem precedência. Heurísticas PT/EN complementam paths e discovery como sinais, sem se tornar um dicionário autoritativo. Uma alteração rotineira de dependência é `normal` por padrão; somente `structural_dependency` ou outro sinal arquitetural promove risco e aciona o architect.
 
-### 5.11 Política de TDD
+### 5.12 Política de TDD
 
 TDD é decidido pelo tipo da mudança:
 
@@ -409,7 +429,7 @@ O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.cod
 
 ## 10. Estrutura de diretórios
 
-A v0.3 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.4 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -422,6 +442,7 @@ azevedo-engineering/
 │   │   ├── discovery/             # inspection read-only
 │   │   ├── inspection/            # contrato canônico do resultado público
 │   │   ├── initialization/         # artifacts, planning, apply e report
+│   │   ├── planning/               # Engineering Plan e persistência create-only
 │   │   ├── profiles/              # stack profiles/reference manifest
 │   │   ├── risk/                  # task/risk classification
 │   │   ├── agents/                # papéis canônicos
@@ -437,6 +458,7 @@ azevedo-engineering/
 │   ├── contracts/
 │   ├── discovery/
 │   ├── initialization/
+│   ├── planning/
 │   ├── risk/
 │   ├── verification/
 │   ├── adapters/
@@ -452,7 +474,7 @@ No futuro, `schemas`, `runtime` e `cli` podem virar packages independentes sem a
 
 ## 11. Distribuição por CLI/NPM
 
-O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.3 ainda não é publicada e não há mutação por `postinstall`.
+O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.4 ainda não é publicada e não há mutação por `postinstall`.
 
 Superfície atual:
 
@@ -460,19 +482,19 @@ Superfície atual:
 npx @azevedo/engineering inspect
 npx @azevedo/engineering init --dry-run
 npx @azevedo/engineering init
+npx @azevedo/engineering plan --task "Adicionar comportamento"
 ```
 
 Comandos futuros, ainda não implementados:
 
 ```text
-npx @azevedo/engineering plan --target codex
 npx @azevedo/engineering apply --target codex
 npx @azevedo/engineering diff
 npx @azevedo/engineering verify
 npx @azevedo/engineering doctor
 ```
 
-`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, unknowns, conflitos e ambiguidades. `init` planeja antes de escrever e materializa somente config mínima, bootstrap Codex e README local quando não há conflitos.
+`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, unknowns, conflitos e ambiguidades. `init` planeja antes de escrever e materializa somente config mínima, bootstrap Codex e README local quando não há conflitos. `plan` exige essa fundação, persiste somente o contrato JSON e não altera código.
 
 `.azevedo/state.json` futuramente registrará versão, resolução, arquivos/blocos gerenciados, hashes e overrides. Arquivos modificados pelo usuário serão preservados e reportados. Configuração global será sempre opt-in.
 
@@ -490,6 +512,7 @@ Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos projec
 - verifiers sem shell implícito e resolução por affected scope;
 - vínculo de evidence à revisão/diff.
 - initialization planning puro, conflitos, idempotência, containment e atomicidade lógica de groups.
+- Engineering Plan schema, unknowns, risk/verification composition, persistência idempotente e write boundary.
 
 ### 12.2 Fixtures
 
@@ -525,10 +548,11 @@ ADRs relacionados:
 - [ADR-0003 — Entrega baseada em risco, evidência e governança](decisions/0003-entrega-baseada-em-risco-e-evidencia.md)
 - [ADR-0004 — Project groups não são monorepos](decisions/0004-project-groups-nao-sao-monorepos.md)
 - [ADR-0005 — Initialization and File Ownership](decisions/0005-initialization-and-file-ownership.md)
+- [ADR-0006 — Engineering Plans Are Persistent Contracts](decisions/0006-engineering-plans-are-persistent-contracts.md)
 
-## 14. Limite da v0.3
+## 14. Limite da v0.4
 
-A v0.3 preserva inspection e adiciona somente initialization segura:
+A v0.4 preserva inspection e initialization e adiciona somente planning determinístico:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -556,5 +580,12 @@ A v0.3 preserva inspection e adiciona somente initialization segura:
 - config mínima, bootstrap Codex e `.azevedo/README.md`;
 - ownership, conflitos, idempotência, symlink safety e path containment;
 - preflight global para atomicidade lógica de project groups.
+- `plan [path] --task`, human output e JSON CLI output;
+- Engineering Plan canônico, determinístico e persistido em `.azevedo/plans/`;
+- scope conservador, affected paths vazios sem evidence e unknowns explícitos;
+- composição do classifier, TDD e verification existentes;
+- persistência create-only, idempotência, conflito e symlink safety;
+- compatibilidade com projetos v0.3 sem migration;
+- resultado `already-initialized` para init sem criações.
 
-O trabalho deve parar após Safe Project Initialization estar verificado. Update, rollback transacional, `--force`, prompts interativos, busca recursiva, demais comandos, outros adapters, plugin, hooks, MCP, catálogo de conteúdo, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.
+O trabalho deve parar após Engineering Plan estar verificado. Execução de plano, explorer/architect/reviewer execution, verify CLI, update, migration, rollback transacional, `--force`, prompts interativos, LLM, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.
