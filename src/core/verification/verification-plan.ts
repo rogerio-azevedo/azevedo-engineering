@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { ProjectInspection } from "../schemas/discovery.js";
 import type { TaskClassification } from "../schemas/task.js";
 import { ComponentIdSchema } from "../schemas/component.js";
+import { CommandEffectSchema } from "../schemas/evidence.js";
+import { classifyCommandEffect } from "./command-effect.js";
 
 type VerificationInspection = Omit<ProjectInspection, "inspectedAt">;
 
@@ -22,9 +24,12 @@ export const VerificationPlanItemSchema = VerificationTargetSchema.extend({
   riskReduced: z.string().min(1),
   evidenceProduced: z.string().min(1),
   reason: z.string().min(1),
+  commandEffect: CommandEffectSchema.default("unknown"),
+  commandEffectBasis: z.array(z.string().min(1)).min(1).default(["Legacy target has no static effect classification."]),
 });
 
 export type VerificationPlanItem = z.infer<typeof VerificationPlanItemSchema>;
+export type VerificationPlanItemInput = z.input<typeof VerificationPlanItemSchema>;
 
 export type VerificationPlanPolicy = {
   mandatoryCapabilities?: ReadonlySet<"lint" | "typecheck" | "test" | "build">;
@@ -104,6 +109,8 @@ export function resolveVerificationPlan(
     riskReduced: "Invalid project assumptions and missing structural inputs.",
     evidenceProduced: `Presence check for concrete task inputs under ${scope}.`,
     reason: "Every affected scope must verify the structural inputs it relied on.",
+    commandEffect: "read-only" as const,
+    commandEffectBasis: ["The built-in file-presence verifier does not execute a project command."],
   }));
 
   if (classification.risk === "trivial") return plan.map((item) => VerificationPlanItemSchema.parse(item));
@@ -131,6 +138,9 @@ export function resolveVerificationPlan(
       const available = Boolean(script);
       const required = requiredCapabilities.has(id);
       const target = { verifierId: `verify.${id}` as const, scope };
+      const effect = script
+        ? classifyCommandEffect(script.command)
+        : { effect: "unknown" as const, basis: ["No project command is available to classify."] };
       plan.push({
         ...target,
         targetId: verificationTargetId(target),
@@ -147,6 +157,8 @@ export function resolveVerificationPlan(
           : required
             ? `${id} is explicitly mandatory for affected scope ${scope}, but no script is declared by that package.`
             : `${id} is unavailable for affected scope ${scope}; the gap is recorded but is not automatically mandatory.`,
+        commandEffect: effect.effect,
+        commandEffectBasis: effect.basis,
       });
     }
   }

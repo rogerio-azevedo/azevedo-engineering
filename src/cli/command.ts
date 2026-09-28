@@ -25,7 +25,7 @@ import {
   buildPlanRevisionArtifactOperation,
 } from "../core/planning/plan-revision-persistence.js";
 import { EngineeringPlanRevisionSchema } from "../core/planning/plan-revision.js";
-import { loadExecutionInputs } from "../core/execution/execution-loader.js";
+import { loadExecutionInputs, loadLatestExecutionSession } from "../core/execution/execution-loader.js";
 import { captureProjectCheckpoint } from "../core/execution/project-checkpoint.js";
 import { prepareExecution } from "../core/execution/prepare-execution.js";
 import {
@@ -33,6 +33,15 @@ import {
   buildExecutionArtifactOperations,
   nextExecutionSequence,
 } from "../core/execution/execution-persistence.js";
+import { captureGitRangeChangeSet, captureWorkingTreeChangeSet } from "../core/review/change-set.js";
+import { prepareReview } from "../core/review/prepare-review.js";
+import { ReviewSubmissionSchema, type ReviewReport, type ReviewSubmission } from "../core/review/review-contracts.js";
+import { finalizeReview } from "../core/review/review-runtime.js";
+import {
+  applyReviewArtifactOperations,
+  buildReviewArtifactOperations,
+  loadReviewPreparation,
+} from "../core/review/review-persistence.js";
 import {
   createTaskSpecification,
   FeatureSpecificationSchema,
@@ -77,6 +86,8 @@ const GENERAL_HELP = `Usage:
   azevedo plan [path] --task <task> [--json]
   azevedo explore [path] --plan <plan-id> [--spec <file>] [--dry-run] [--json]
   azevedo execute [path] --revision <revision-id> --prepare [--authorize-isolated-write] [--context-budget <tokens>] [--dry-run] [--json]
+  azevedo review [path] --execution <execution-id> --base <git-ref> [--head <git-ref>] --prepare [--dry-run] [--json]
+  azevedo review [path] --submission <file> [--dry-run] [--json]
 
 Commands:
   inspect    Inspect a project without modifying it
@@ -84,6 +95,7 @@ Commands:
   plan       Create a deterministic engineering plan for an initialized project
   explore    Build evidence-backed implementation context without executing the plan
   execute    Prepare a bounded execution session; never invokes a coding provider
+  review     Prepare review context or finalize a provider-neutral review submission
 
 Options:
   --help     Show help
@@ -155,6 +167,24 @@ Options:
   --help                      Show help
 `;
 
+const REVIEW_HELP = `Usage:
+  azevedo review [path] --execution <execution-id> --base <git-ref> [--head <git-ref>] --prepare [--dry-run] [--json]
+  azevedo review [path] --submission <file> [--dry-run] [--json]
+
+Arguments:
+  path         Initialized project directory (default: current directory)
+
+Options:
+  --execution  Required execution session id
+  --base       Required trusted git base ref
+  --head       Optional git target ref; omitted reviews the current working tree
+  --prepare    Required context-preparation mode; no coding provider is invoked
+  --submission Provider-neutral JSON submission to validate, finalize, and persist
+  --dry-run    Validate and show artifacts without writing harness state
+  --json       Output machine-readable JSON
+  --help       Show help
+`;
+
 type InspectArguments = {
   help: boolean;
   json: boolean;
@@ -180,6 +210,15 @@ type ExecuteArguments = InspectArguments & {
   prepare: boolean;
   authorizeIsolatedWrite: boolean;
   contextBudget: number | undefined;
+  dryRun: boolean;
+};
+
+type ReviewArguments = InspectArguments & {
+  executionId: string | undefined;
+  baseRef: string | undefined;
+  headRef: string | undefined;
+  submissionPath: string | undefined;
+  prepare: boolean;
   dryRun: boolean;
 };
 
@@ -344,6 +383,57 @@ function parseExecuteArguments(args: readonly string[]): ExecuteArguments {
   return { help, json, prepare, authorizeIsolatedWrite, contextBudget, dryRun, path: projectPath ?? ".", revisionId };
 }
 
+function parseReviewArguments(args: readonly string[]): ReviewArguments {
+  let help = false;
+  let json = false;
+  let prepare = false;
+  let dryRun = false;
+  let projectPath: string | undefined;
+  let executionId: string | undefined;
+  let baseRef: string | undefined;
+  let headRef: string | undefined;
+  let submissionPath: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--help" || argument === "-h") help = true;
+    else if (argument === "--json") json = true;
+    else if (argument === "--prepare") prepare = true;
+    else if (argument === "--dry-run") dryRun = true;
+    else if (argument === "--execution" || argument === "--base" || argument === "--head" || argument === "--submission") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) throw new CliError(`Option ${argument} requires a value.`, EXIT_INVALID_USAGE);
+      if (argument === "--execution") {
+        if (executionId) throw new CliError("Option --execution may only be provided once.", EXIT_INVALID_USAGE);
+        executionId = value;
+      } else if (argument === "--base") {
+        if (baseRef) throw new CliError("Option --base may only be provided once.", EXIT_INVALID_USAGE);
+        baseRef = value;
+      } else if (argument === "--head") {
+        if (headRef) throw new CliError("Option --head may only be provided once.", EXIT_INVALID_USAGE);
+        headRef = value;
+      } else {
+        if (submissionPath) throw new CliError("Option --submission may only be provided once.", EXIT_INVALID_USAGE);
+        submissionPath = value;
+      }
+      index += 1;
+    } else if (argument?.startsWith("-")) throw new CliError(`Unknown option: ${argument}`, EXIT_INVALID_USAGE);
+    else if (projectPath !== undefined) throw new CliError(`Unexpected argument: ${argument}`, EXIT_INVALID_USAGE);
+    else projectPath = argument;
+  }
+  if (!help && prepare === Boolean(submissionPath)) {
+    throw new CliError("Choose exactly one review mode: --prepare or --submission <file>.", EXIT_INVALID_USAGE);
+  }
+  if (!help && prepare && !executionId) throw new CliError("Option --execution is required for --prepare.", EXIT_INVALID_USAGE);
+  if (!help && prepare && !baseRef) throw new CliError("Option --base is required for --prepare.", EXIT_INVALID_USAGE);
+  if (!help && submissionPath && (executionId || baseRef || headRef)) {
+    throw new CliError("Option --submission cannot be combined with --execution, --base, or --head.", EXIT_INVALID_USAGE);
+  }
+  if (executionId && !/^execution-[1-9][0-9]*-[a-f0-9]{10}$/.test(executionId)) {
+    throw new CliError("Option --execution must be an immutable execution id.", EXIT_INVALID_USAGE);
+  }
+  return { help, json, prepare, dryRun, path: projectPath ?? ".", executionId, baseRef, headRef, submissionPath };
+}
+
 function renderExecutionPreparation(result: ReturnType<typeof prepareExecution>, operations: readonly { action: string; artifact: string }[], dryRun: boolean): string {
   const readiness = result.preparation.readiness;
   return [
@@ -362,6 +452,60 @@ function renderExecutionPreparation(result: ReturnType<typeof prepareExecution>,
     "  Artifacts:",
     ...operations.map((operation) => `    ${operation.action}: ${operation.artifact}`),
     result.instructions ? "\nPrepared agent instructions:\n" + result.instructions : "",
+  ].join("\n") + "\n";
+}
+
+function renderReviewPreparation(
+  result: ReturnType<typeof prepareReview>,
+  operations: readonly { action: string; artifact: string }[],
+  dryRun: boolean,
+): string {
+  return [
+    "Review preparation",
+    `  Status: ${result.status}`,
+    `  Mode: ${dryRun ? "dry-run" : "persist immutable review context"}`,
+    `  Context: ${result.context.id}`,
+    `  Change set: ${result.context.changeSet.id} (${result.context.changeSet.source}; ${result.context.changeSet.files.length} files)`,
+    `  Exact execution match: ${result.context.changeSet.exactExecutionMatch ? "yes" : "no"}`,
+    `  Required lenses: ${result.context.requiredLenses.join(", ")}`,
+    `  Security domains: ${result.context.securityDomains.map((domain) => domain.id).join(", ") || "none"}`,
+    "  Reasons:",
+    ...(result.reasons.length > 0
+      ? result.reasons.map((reason) => `    ${reason.blocking ? "BLOCK" : "INFO"} ${reason.code}: ${reason.message}`)
+      : ["    none"]),
+    "  Artifacts:",
+    ...operations.map((operation) => `    ${operation.action}: ${operation.artifact}`),
+  ].join("\n") + "\n";
+}
+
+function renderReviewReport(
+  report: ReviewReport,
+  operations: readonly { action: string; artifact: string }[],
+  dryRun: boolean,
+): string {
+  return [
+    "Review report",
+    `  Status: ${report.readiness.status}`,
+    `  Mode: ${dryRun ? "dry-run" : "persist immutable initial report"}`,
+    `  Report: ${report.id}`,
+    `  Context: ${report.contextId}`,
+    `  Candidates: ${report.candidateFindings.length}`,
+    `  Confirmed/consolidated: ${report.findings.length}`,
+    `  Rejected: ${report.rejectedCandidateIds.length}`,
+    `  Insufficient: ${report.insufficientCandidateIds.length}`,
+    "  Findings:",
+    ...(report.findings.length > 0
+      ? report.findings.map((finding) => {
+        const location = finding.locations[0]!;
+        return `    ${finding.severity.toUpperCase()} ${finding.id}: ${finding.title} (${location.path}${location.line ? `:${location.line}` : ""})`;
+      })
+      : ["    none"]),
+    "  Reasons:",
+    ...(report.readiness.reasons.length > 0
+      ? report.readiness.reasons.map((reason) => `    ${reason.blocking ? "BLOCK" : "INFO"} ${reason.code}: ${reason.message}`)
+      : ["    none"]),
+    "  Artifacts:",
+    ...operations.map((operation) => `    ${operation.action}: ${operation.artifact}`),
   ].join("\n") + "\n";
 }
 
@@ -416,6 +560,13 @@ function readSpecification(specificationPath: string, cwd: string): FeatureSpeci
   return parseFeatureSpecification(JSON.parse(readFileSync(path, "utf8")));
 }
 
+function readReviewSubmission(submissionPath: string, cwd: string): ReviewSubmission {
+  const path = resolve(cwd, submissionPath);
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink() || !stats.isFile()) throw new Error(`Review submission is not a safe regular file: ${path}`);
+  return ReviewSubmissionSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+}
+
 function operationReport(operation: { action: string; artifact: string; reason?: string }) {
   return ExploreOperationReportSchema.parse({
     action: operation.action,
@@ -448,7 +599,7 @@ export function runCli(
       return EXIT_SUCCESS;
     }
 
-    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore" && command !== "execute") {
+    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore" && command !== "execute" && command !== "review") {
       throw new CliError(`Unknown command: ${command}`, EXIT_INVALID_USAGE);
     }
 
@@ -579,11 +730,63 @@ export function runCli(
         const operations = buildExecutionArtifactOperations(root, result.preparation, result.context, result.session);
         if (!executeArguments.dryRun) applyExecutionArtifactOperations(root, operations);
         io.stdout(executeArguments.json
-          ? `${JSON.stringify({ ...result, dryRun: executeArguments.dryRun, operations }, null, 2)}\n`
+          ? `${JSON.stringify({ ...result, dryRun: executeArguments.dryRun, operations: operations.map(operationReport) }, null, 2)}\n`
           : renderExecutionPreparation(result, operations, executeArguments.dryRun));
         return result.preparation.readiness.status === "ready" ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR;
       } catch (error) {
         throw new CliError(`Execution preparation failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+      }
+    }
+
+    if (command === "review") {
+      const reviewArguments = parseReviewArguments(commandArguments);
+      if (reviewArguments.help) {
+        io.stdout(REVIEW_HELP);
+        return EXIT_SUCCESS;
+      }
+      const root = resolveProjectRoot(reviewArguments.path, options.cwd);
+      try {
+        if (reviewArguments.submissionPath) {
+          const submission = readReviewSubmission(reviewArguments.submissionPath, options.cwd);
+          const preparation = loadReviewPreparation(root, submission.contextId);
+          const report = finalizeReview({ preparation, submission });
+          const operations = buildReviewArtifactOperations(root, preparation, report);
+          if (!reviewArguments.dryRun) applyReviewArtifactOperations(root, operations);
+          io.stdout(reviewArguments.json
+            ? `${JSON.stringify({ report, dryRun: reviewArguments.dryRun, operations: operations.map(operationReport) }, null, 2)}\n`
+            : renderReviewReport(report, operations, reviewArguments.dryRun));
+          return report.readiness.status === "BLOCKED" ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
+        }
+        const inspection = createInspectResult(root);
+        if (inspection.kind === "project-group") throw new Error("Review requires one concrete project, not a project group.");
+        if (inspection.topology.state === "unknown") throw new Error("There is not enough evidence of a recognizable project to review.");
+        const execution = loadLatestExecutionSession(root, reviewArguments.executionId ?? "");
+        const artifacts = loadExecutionInputs(root, execution.revisionId);
+        const changeSet = reviewArguments.headRef
+          ? captureGitRangeChangeSet({
+            projectRoot: root,
+            baseRef: reviewArguments.baseRef ?? "",
+            targetRef: reviewArguments.headRef,
+            session: execution,
+            revision: artifacts.revision,
+            exploration: artifacts.exploration,
+          })
+          : captureWorkingTreeChangeSet({
+            projectRoot: root,
+            baseRef: reviewArguments.baseRef ?? "",
+            session: execution,
+            revision: artifacts.revision,
+            exploration: artifacts.exploration,
+          });
+        const result = prepareReview({ inspection, ...artifacts, execution, changeSet });
+        const operations = buildReviewArtifactOperations(root, result);
+        if (!reviewArguments.dryRun) applyReviewArtifactOperations(root, operations);
+        io.stdout(reviewArguments.json
+          ? `${JSON.stringify({ ...result, dryRun: reviewArguments.dryRun, operations: operations.map(operationReport) }, null, 2)}\n`
+          : renderReviewPreparation(result, operations, reviewArguments.dryRun));
+        return result.status === "ready" ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR;
+      } catch (error) {
+        throw new CliError(`Review preparation failed for ${root}: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
       }
     }
 

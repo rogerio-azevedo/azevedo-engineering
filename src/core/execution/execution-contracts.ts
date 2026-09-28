@@ -69,6 +69,11 @@ export const ProjectCheckpointSchema = z.object({
   gitMode: z.enum(["primary-worktree", "linked-worktree", "not-git"]),
   status: z.array(GitStatusEntrySchema),
   subjectRevision: SubjectRevisionSchema,
+  workspaceIdentity: z.object({
+    projectRootDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    gitDirectoryDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).nullable(),
+    gitCommonDirectoryDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).nullable(),
+  }).strict().nullable().optional(),
 }).strict();
 
 export const ExecutionPermissionSchema = z.object({
@@ -166,6 +171,8 @@ export const ExecutionFailureCategorySchema = z.enum([
   "scope-discovery",
   "product-ambiguity",
   "external-service",
+  "command-side-effect",
+  "workspace-mismatch",
 ]);
 
 export const ExecutionAttemptSchema = z.object({

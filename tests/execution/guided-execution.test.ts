@@ -519,22 +519,135 @@ test("verification runtime captures successful and failed trusted scripts and bl
   const inspection = createInspectResult(root);
   assert.equal(inspection.kind, "project");
   if (inspection.kind !== "project") return;
-  const revision = captureProjectCheckpoint(root).subjectRevision;
+  const authorizedCheckpoint = captureProjectCheckpoint(root);
+  const revision = authorizedCheckpoint.subjectRevision;
   const target = (verifierId: "verify.test" | "verify.build", script: string, available = true) => ({
     targetId: `${verifierId}::.`, verifierId, scope: ".", required: true, available,
     packagePath: available ? "." : null, script: available ? script : null,
     riskReduced: "Runtime regression.", evidenceProduced: "Command result.", reason: "Discovered package script.",
   });
-  const passed = runVerificationTarget({ taskId: "task", projectRoot: root, inspection, target: target("verify.test", "test"), subjectRevision: revision });
+  const passed = runVerificationTarget({
+    taskId: "task", projectRoot: root, inspection, target: target("verify.test", "test"), subjectRevision: revision,
+    authorizedCheckpoint, requireIsolatedWorkspace: false,
+  });
   assert.equal(passed.outcome, "passed");
   assert.equal((passed.evidence as { exitCode: number }).exitCode, 0);
-  const failed = runVerificationTarget({ taskId: "task", projectRoot: root, inspection, target: target("verify.build", "build"), subjectRevision: revision });
+  const failed = runVerificationTarget({
+    taskId: "task", projectRoot: root, inspection, target: target("verify.build", "build"), subjectRevision: revision,
+    authorizedCheckpoint, requireIsolatedWorkspace: false,
+  });
   assert.equal(failed.outcome, "failed");
   assert.equal(failed.failureCategory, "build-failure");
   assert.equal((failed.evidence as { exitCode: number }).exitCode, 7);
-  const unavailable = runVerificationTarget({ taskId: "task", projectRoot: root, inspection, target: target("verify.test", "test", false), subjectRevision: revision });
+  const unavailable = runVerificationTarget({
+    taskId: "task", projectRoot: root, inspection, target: target("verify.test", "test", false), subjectRevision: revision,
+    authorizedCheckpoint, requireIsolatedWorkspace: false,
+  });
   assert.equal(unavailable.outcome, "blocked");
   assert.equal(unavailable.failureCategory, "environment-failure");
+});
+
+test("verification blocks a discovered lint --fix command before it can mutate source", () => {
+  const root = mkdtempSync(join(tmpdir(), "azevedo-verification-static-effect-"));
+  write(root, "package.json", `${JSON.stringify({
+    name: "static-effect",
+    packageManager: "pnpm@11.24.0",
+    scripts: { lint: "node -e \"require('fs').writeFileSync('source.ts','mutated')\" --fix" },
+  })}\n`);
+  write(root, "source.ts", "original\n");
+  const inspection = createInspectResult(root);
+  assert.equal(inspection.kind, "project");
+  if (inspection.kind !== "project") return;
+  const checkpoint = captureProjectCheckpoint(root);
+  const result = runVerificationTarget({
+    taskId: "task-static-effect",
+    projectRoot: root,
+    inspection,
+    target: {
+      targetId: "verify.lint::.", verifierId: "verify.lint", scope: ".", required: true, available: true,
+      packagePath: ".", script: "lint", riskReduced: "Policy drift.", evidenceProduced: "Lint result.", reason: "Discovered.",
+    },
+    subjectRevision: checkpoint.subjectRevision,
+    authorizedCheckpoint: checkpoint,
+    requireIsolatedWorkspace: false,
+  });
+
+  assert.equal(result.outcome, "blocked");
+  assert.equal(result.failureCategory, "command-side-effect");
+  assert.equal(readFileSync(join(root, "source.ts"), "utf8"), "original\n");
+});
+
+test("verification detects and preserves an unexpected source mutation as failed evidence", () => {
+  const root = mkdtempSync(join(tmpdir(), "azevedo-verification-observed-effect-"));
+  write(root, "package.json", `${JSON.stringify({
+    name: "observed-effect",
+    packageManager: "pnpm@11.24.0",
+    scripts: { test: "node -e \"require('fs').writeFileSync('source.ts','mutated\\n')\"" },
+  })}\n`);
+  write(root, "source.ts", "original\n");
+  const inspection = createInspectResult(root);
+  assert.equal(inspection.kind, "project");
+  if (inspection.kind !== "project") return;
+  const checkpoint = captureProjectCheckpoint(root);
+  const result = runVerificationTarget({
+    taskId: "task-observed-effect",
+    projectRoot: root,
+    inspection,
+    target: {
+      targetId: "verify.test::.", verifierId: "verify.test", scope: ".", required: true, available: true,
+      packagePath: ".", script: "test", riskReduced: "Regression.", evidenceProduced: "Test result.", reason: "Discovered.",
+    },
+    subjectRevision: checkpoint.subjectRevision,
+    authorizedCheckpoint: checkpoint,
+    requireIsolatedWorkspace: false,
+  });
+  const evidence = result.evidence as { commandEffect: { observed: string; affectedPaths: string[] }; status: string };
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.failureCategory, "command-side-effect");
+  assert.equal(evidence.status, "fail");
+  assert.equal(evidence.commandEffect.observed, "changed");
+  assert.deepEqual(evidence.commandEffect.affectedPaths, ["source.ts"]);
+  assert.equal(readFileSync(join(root, "source.ts"), "utf8"), "mutated\n");
+});
+
+test("verification command requires the authorized workspace and linked isolation by default", () => {
+  const root = mkdtempSync(join(tmpdir(), "azevedo-verification-workspace-"));
+  write(root, "package.json", `${JSON.stringify({
+    name: "workspace-binding",
+    packageManager: "pnpm@11.24.0",
+    scripts: { test: "node -e \"process.exit(0)\"" },
+  })}\n`);
+  const inspection = createInspectResult(root);
+  assert.equal(inspection.kind, "project");
+  if (inspection.kind !== "project") return;
+  const checkpoint = captureProjectCheckpoint(root);
+  const target = {
+    targetId: "verify.test::.", verifierId: "verify.test" as const, scope: ".", required: true, available: true,
+    packagePath: ".", script: "test", riskReduced: "Regression.", evidenceProduced: "Test result.", reason: "Discovered.",
+  };
+  const absentAuthorization = runVerificationTarget({
+    taskId: "task-workspace", projectRoot: root, inspection, target,
+    subjectRevision: checkpoint.subjectRevision,
+  });
+  assert.equal(absentAuthorization.failureCategory, "workspace-mismatch");
+
+  const primaryRoot = mkdtempSync(join(tmpdir(), "azevedo-verification-primary-"));
+  assert.equal(spawnSync("git", ["init", "--quiet"], { cwd: primaryRoot }).status, 0);
+  write(primaryRoot, "package.json", `${JSON.stringify({
+    name: "primary-binding", packageManager: "pnpm@11.24.0", scripts: { test: "node -e \"process.exit(0)\"" },
+  })}\n`);
+  const primaryInspection = createInspectResult(primaryRoot);
+  assert.equal(primaryInspection.kind, "project");
+  if (primaryInspection.kind !== "project") return;
+  const primaryCheckpoint = captureProjectCheckpoint(primaryRoot);
+  const primaryResult = runVerificationTarget({
+    taskId: "task-primary", projectRoot: primaryRoot, inspection: primaryInspection, target,
+    subjectRevision: primaryCheckpoint.subjectRevision, authorizedCheckpoint: primaryCheckpoint,
+  });
+  assert.equal(primaryResult.outcome, "blocked");
+  assert.equal(primaryResult.failureCategory, "workspace-mismatch");
+  assert.match(primaryResult.reason ?? "", /linked worktree/);
 });
 
 test("git checkpoint captures HEAD/status and preserves pre-existing human work without cleanup", () => {

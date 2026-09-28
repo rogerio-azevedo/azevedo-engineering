@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.6.1 endurece a Guided Execution com exploração greenfield, relevância baseada em evidência, verification coerente com as capabilities reais, preparação read-only e representação coordenada de features cross-repo, sem acoplar o core a um provider.
+Engineering harness reutilizável para coding agents. A v0.7 acrescenta command-effect safety e Review & Security estruturados à Guided Execution, mantendo o core provider-neutral e toda escrita de source sob autorização explícita.
 
 ## Inspect
 
@@ -65,7 +65,7 @@ Project groups não são planejados automaticamente. O usuário precisa selecion
 
 O core expõe `KnowledgeUnit` e `ContextManifest` para selecionar somente conhecimento aplicável por fase, task, risco, sinais, tecnologia, capability e prefixo de path. A resolução é determinística, explica cada seleção, inclui dependências e falha em conflitos. A foundation começou com quatro sínteses de uso geral com proveniência fixa do ECC.
 
-O catálogo totaliza dezenove unidades. Além das oito unidades de Exploration, a v0.6 acrescenta sete unidades focadas em disciplina de implementação, scope, TDD contextual, verification, diagnóstico de falhas, recovery limitado e evidência de mudanças. O `ContextManifest` registra exatamente quais unidades foram selecionadas e por quê.
+O catálogo totaliza 21 unidades. Além das oito unidades de Exploration e sete de Execution, a v0.7 acrescenta somente duas unidades focadas em revisão por acceptance criteria e verificação adversarial de findings. O `ContextManifest` registra exatamente quais unidades foram selecionadas e por quê.
 
 O Plan ID identifica a intenção inicial. Enrichment não sobrescreve o plano base: critérios de aceite e contexto descoberto são persistidos como `EngineeringPlanRevision` encadeada e create-only.
 
@@ -114,7 +114,20 @@ Sem `--dry-run`, apenas artifacts do harness são gravados de forma create-only:
 
 O core expõe uma interface provider-neutral `CodingAgent`, mas não inclui integração programática com Codex ou outro provider. Tentativas e snapshots são append-only, recovery é limitado a três attempts, scope adicional exige razão e evidence ids, e completion exige checkpoint final, attempt bem-sucedido, verification obrigatória aprovada e todos os critérios em estado `verified`.
 
-O Verification Runtime executa somente scripts encontrados pela inspection, com argumentos fixos e `shell: false`. Capability disponível e requirement obrigatória são conceitos distintos: uma capability ausente é registrada, mas só bloqueia quando a Specification ou a política aplicável a torna obrigatória. Targets desconhecidos, requirements indisponíveis e comandos destrutivos são bloqueados. Values de secrets nunca pertencem aos artifacts; somente nomes de environment variables são permitidos.
+O Verification Runtime executa somente scripts encontrados pela inspection, com argumentos fixos e `shell: false`. Capability disponível e requirement obrigatória são conceitos distintos: uma capability ausente é registrada, mas só bloqueia quando a Specification ou a política aplicável a torna obrigatória. Targets desconhecidos, requirements indisponíveis, comandos destrutivos e comandos mutantes são bloqueados. Os demais comandos são observados antes/depois e exigem vínculo ao checkpoint do mesmo workspace; qualquer mutação visível invalida a evidence e é preservada para inspeção, sem auto-restore. Values de secrets nunca pertencem aos artifacts; somente nomes de environment variables são permitidos.
+
+## Review & Security
+
+```bash
+azevedo review ./isolated-worktree --execution execution-1-1234567890 --base <base-ref> --prepare --dry-run
+azevedo review ./isolated-worktree --execution execution-1-1234567890 --base <base-ref> --prepare --json
+azevedo review ./project --execution execution-1-1234567890 --base <base-ref> --head <target-ref> --prepare --json
+azevedo review ./project --submission ./review-submission.json --json
+```
+
+Sem `--head`, o comando revisa o working tree atual e exige que ele corresponda ao checkpoint final da execution. Com `--head`, captura um git range explícito e registra honestamente qualquer divergência em relação ao snapshot executado. O CLI valida a cadeia Specification → Plan Revision → Exploration → Execution → ChangeSet, seleciona trust boundaries e domínios de segurança e persiste apenas artifacts imutáveis em `.azevedo/reviews/`; ele não chama um provider nem produz findings por conta própria. Uma submissão provider-neutral pode então ser validada com `--submission` para produzir o primeiro relatório imutável.
+
+O core expõe interfaces separadas para produção de finding candidates e verificação adversarial. Cada acceptance criterion recebe um estado explícito, cada candidate precisa ser confirmado, rejeitado com counterevidence ou marcado como evidence insuficiente, e findings só são consolidados por causa-raiz estruturada. `ReviewReadiness` retorna `PASS`, `PASS_WITH_FINDINGS` ou `BLOCKED`, sem score. O primeiro `ReviewReport` é create-only e uma correction policy futura continua limitada, append-only e dependente de nova autorização/revisão.
 
 Exit codes:
 
@@ -135,11 +148,13 @@ node dist/src/cli.js init . --dry-run
 node dist/src/cli.js plan . --task "Atualizar documentação"
 node dist/src/cli.js explore . --plan <plan-id> --dry-run
 node dist/src/cli.js execute . --revision <revision-id> --prepare --dry-run
+node dist/src/cli.js review . --execution <execution-id> --base <base-ref> --prepare --dry-run
+node dist/src/cli.js review . --submission ./review-submission.json --dry-run
 pnpm verify
 ```
 
-O package expõe o bin `azevedo`, preparando uso futuro via `npx @azevedo/engineering inspect`, `init`, `plan`, `explore` e `execute`. A publicação no NPM ainda não faz parte desta versão.
+O package expõe o bin `azevedo`, preparando uso futuro via `npx @azevedo/engineering inspect`, `init`, `plan`, `explore`, `execute` e `review`. A publicação no NPM ainda não faz parte desta versão.
 
-Esta versão mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Ela prepara e registra Guided Execution, mas não implementa loop autônomo, provider API, commit/push, reviewer/security runtime, update, plugin, hooks, MCP, memory ou learning.
+Esta versão mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Ela prepara e registra Guided Execution e Review & Security, mas não implementa correção autônoma, provider API, commit/push, update, plugin, hooks, MCP, memory ou learning.
 
 Consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para os limites e decisões do projeto.

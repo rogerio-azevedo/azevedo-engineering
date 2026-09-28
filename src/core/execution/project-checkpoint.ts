@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { relative, resolve, sep } from "node:path";
 import { captureSubjectRevision } from "../verification/subject-revision.js";
@@ -17,6 +18,10 @@ function git(root: string, args: string[]) {
   return spawnSync("git", args, { cwd: root, encoding: "utf8", shell: false });
 }
 
+function pathDigest(path: string): string {
+  return `sha256:${createHash("sha256").update(resolve(path)).digest("hex")}`;
+}
+
 export function captureProjectCheckpoint(projectRoot: string): ProjectCheckpoint {
   const root = resolve(projectRoot);
   const gitRootResult = git(root, ["rev-parse", "--show-toplevel"]);
@@ -28,6 +33,11 @@ export function captureProjectCheckpoint(projectRoot: string): ProjectCheckpoint
     gitMode: "not-git",
     status: [],
     subjectRevision,
+    workspaceIdentity: {
+      projectRootDigest: pathDigest(root),
+      gitDirectoryDigest: null,
+      gitCommonDirectoryDigest: null,
+    },
   });
 
   const gitRoot = gitRootResult.stdout.trim();
@@ -65,7 +75,21 @@ export function captureProjectCheckpoint(projectRoot: string): ProjectCheckpoint
     gitMode: gitDir !== commonDir || gitDir.includes(`${sep}worktrees${sep}`) ? "linked-worktree" : "primary-worktree",
     status: status.sort((left, right) => left.path.localeCompare(right.path)),
     subjectRevision,
+    workspaceIdentity: {
+      projectRootDigest: pathDigest(root),
+      gitDirectoryDigest: pathDigest(gitDir),
+      gitCommonDirectoryDigest: pathDigest(commonDir),
+    },
   });
+}
+
+export function sameWorkspace(left: ProjectCheckpoint, right: ProjectCheckpoint): boolean {
+  const leftIdentity = ProjectCheckpointSchema.parse(left).workspaceIdentity ?? null;
+  const rightIdentity = ProjectCheckpointSchema.parse(right).workspaceIdentity ?? null;
+  return leftIdentity !== null && rightIdentity !== null &&
+    leftIdentity.projectRootDigest === rightIdentity.projectRootDigest &&
+    leftIdentity.gitDirectoryDigest === rightIdentity.gitDirectoryDigest &&
+    leftIdentity.gitCommonDirectoryDigest === rightIdentity.gitCommonDirectoryDigest;
 }
 
 export function humanDirtyPaths(checkpoint: ProjectCheckpoint): string[] {

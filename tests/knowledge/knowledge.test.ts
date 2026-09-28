@@ -19,14 +19,19 @@ const baseContext = {
 };
 
 test("the initial knowledge catalog is small, valid, and fully provenance-linked", () => {
-  assert.equal(KNOWLEDGE_CATALOG.length, 19);
+  assert.equal(KNOWLEDGE_CATALOG.length, 21);
   for (const unit of KNOWLEDGE_CATALOG) {
     assert.deepEqual(KnowledgeUnitSchema.parse(unit), unit);
     assert.ok(unit.provenance.sources.length > 0);
     for (const source of unit.provenance.sources) {
-      assert.equal(source.repository, "affaan-m/ECC");
-      assert.match(source.revision ?? "", /^[a-f0-9]{40}$/);
-      assert.equal(source.license, "MIT");
+      if (unit.provenance.origin === "upstream-synthesis") {
+        assert.equal(source.repository, "affaan-m/ECC");
+        assert.match(source.revision ?? "", /^[a-f0-9]{40}$/);
+        assert.equal(source.license, "MIT");
+      } else {
+        assert.equal(source.repository, null);
+        assert.match(source.path, /^docs\/decisions\//);
+      }
     }
   }
 });
@@ -66,10 +71,15 @@ test("review and trust-boundary context composes the relevant knowledge only", (
   });
 
   assert.deepEqual(manifest.selected.map((selection) => selection.id), [
+    "knowledge.review.acceptance",
+    "knowledge.review.adversarial-verification",
     "knowledge.review.evidence",
     "knowledge.security.trust-boundaries",
   ]);
-  assert.deepEqual(manifest.selected[1]?.reason, ["phase:review", "signal:auth", "signal:external_input"]);
+  assert.deepEqual(
+    manifest.selected.find((selection) => selection.id === "knowledge.security.trust-boundaries")?.reason,
+    ["phase:review", "signal:auth", "signal:external_input"],
+  );
 });
 
 test("selector dimensions are ANDed while values inside a dimension are ORed", () => {

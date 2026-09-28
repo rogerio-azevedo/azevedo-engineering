@@ -1,7 +1,7 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Guided Execution v0.6.1
-- Atualização: 2026-09-27
+- Status: base arquitetural aprovada; Review & Security v0.7
+- Atualização: 2026-09-28
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
 - Estado local: `.azevedo/`
@@ -39,7 +39,7 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.6
+### 2.2 Não objetivos da v0.7
 
 - Publicar o pacote NPM.
 - Construir um plugin Codex completo.
@@ -51,7 +51,7 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Implementar um loop autônomo, integrar API de LLM/provider ou permitir escrita fora de uma execução explicitamente autorizada e isolada.
 - Materializar um catálogo amplo de conhecimento ou interpretar seletores por linguagem natural.
 - Executar testes/builds/linters durante exploration; somente Execution pode invocar verification autorizada.
-- Implementar retries ilimitados, reviewer/security runtime, memória, learning runtime ou multi-agent orchestration.
+- Implementar retries ilimitados, correção autônoma, integração programática com provider, memória, learning runtime ou multi-agent orchestration.
 
 ### 2.3 Harness e arquitetura de referência são produtos distintos
 
@@ -214,7 +214,7 @@ O `ComponentSchema` genérico continua como metadado de catálogo e compatibilid
 
 As dimensões de seleção são fase, tipo de task, classe e sinais de risco, tecnologias, capabilities e prefixos de path. Dimensões declaradas são AND; valores dentro da dimensão são OR. Um selector vazio é inválido. O resolver inclui dependências transitivas, falha em ausência/ciclo/conflito e produz um `ContextManifest` estável com motivos e orçamento, sem timestamp.
 
-A foundation começou com quatro unidades de uso geral. A v0.5 acrescentou oito unidades de exploration e a v0.6 acrescenta sete de execution, totalizando dezenove. Elas são sínteses com proveniência do snapshot auditado do ECC, não cópias integrais nem dependência de runtime.
+A foundation começou com quatro unidades de uso geral. A v0.5 acrescentou oito unidades de exploration, a v0.6 acrescentou sete de execution e a v0.7 acrescenta somente duas: revisão por acceptance criteria e verificação adversarial de findings. O catálogo totaliza 21 unidades; as duas unidades autorais da v0.7 apontam para o ADR que define seu contrato, e as demais continuam como sínteses com proveniência fixa do ECC.
 
 ## 5. Responsabilidades e fronteiras
 
@@ -265,7 +265,7 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.6 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.7 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
@@ -324,7 +324,7 @@ O pipeline é `Task → Inspect Project → Resolve Scope → Classify Risk → 
 
 IDs derivam deterministicamente da task normalizada, topologia e scope inicial. O ID representa a identidade da intenção, não um hash de toda inspection transitória. Persistência é create-only: conteúdo idêntico é unchanged; conteúdo diferente sob o mesmo ID é conflict.
 
-Pesquisa posterior não sobrescreve o plano base. `EngineeringPlanRevision` mantém o mesmo `planId`, um snapshot completo enriquecido, critérios de aceite persistentes, subject revision, fontes, Knowledge Units, sequência, parent e change summary. Cada revisão também é determinística e create-only em `.azevedo/plans/<plan-id>/revisions/<revision-id>.json`. `explore` produz uma revisão formal inclusive para resultados parciais ou bloqueados quando os contracts básicos existem; ela registra honestamente scope vazio e stop reason em vez de fingir sucesso. Na v0.6.1 a revisão alimenta tanto readiness `ready` quanto diagnóstico formal `blocked`; provider automation e review especializado continuam futuros.
+Pesquisa posterior não sobrescreve o plano base. `EngineeringPlanRevision` mantém o mesmo `planId`, um snapshot completo enriquecido, critérios de aceite persistentes, subject revision, fontes, Knowledge Units, sequência, parent e change summary. Cada revisão também é determinística e create-only em `.azevedo/plans/<plan-id>/revisions/<revision-id>.json`. `explore` produz uma revisão formal inclusive para resultados parciais ou bloqueados quando os contracts básicos existem; ela registra honestamente scope vazio e stop reason em vez de fingir sucesso. Na v0.7 a revisão alimenta tanto readiness `ready` quanto diagnóstico formal `blocked`; provider automation continua futura, enquanto o review especializado passa a usar contratos provider-neutral.
 
 ### 5.11 Specification Intake e Evidence-backed Exploration
 
@@ -433,11 +433,11 @@ Uma task só alcança `Done` quando:
 
 ### 8.1 Code review
 
-Cada finding registra severidade, confiança, localização, cenário concreto, impacto observável, evidência e status. Zero findings é válido. Preferências estilísticas só são findings quando violam regra explícita ou escondem risco real.
+Cada finding candidate registra severidade, localização, cenário concreto, impacto observável, evidence quality, vínculos com acceptance/plan/execution, trust boundaries, causa-raiz e atribuição. Um verificador adversarial separado confirma, rejeita com counterevidence ou mantém evidence insuficiente. O core não usa confiança numérica. Zero findings é válido; preferências estilísticas só são findings quando violam regra explícita ou escondem risco real.
 
 ### 8.2 Security review
 
-É acionada por auth/autorização, contratos externos, inputs/uploads/URLs/webhooks, queries e migrations, secrets/PII/logs, dependências/permissões, processos/filesystem, serialização e integrações. O conteúdo específico é selecionado pela stack detectada.
+É acionada por auth/autorização, contratos externos, inputs/uploads/URLs/webhooks, queries e migrations, secrets/PII/logs, dependências/permissões, processos/filesystem, serialização e integrações. Domínios são selecionados por sinais e integration surfaces evidenciadas; mudanças sem boundary aplicável não recebem checklist universal.
 
 ### 8.3 ADRs
 
@@ -476,7 +476,7 @@ O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.cod
 
 ## 10. Estrutura de diretórios
 
-A v0.6 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.7 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -496,6 +496,7 @@ azevedo-engineering/
 │   │   ├── specification/          # intenção fornecida, proveniência e persistência
 │   │   ├── exploration/            # reconnaissance, evidence e artifacts
 │   │   ├── execution/              # readiness, context, session, scope e Git checkpoint
+│   │   ├── review/                 # change set, AC/security review, findings e reports
 │   │   ├── profiles/              # stack profiles/reference manifest
 │   │   ├── risk/                  # task/risk classification
 │   │   ├── agents/                # papéis canônicos
@@ -570,9 +571,29 @@ Artifacts persistem somente nomes de environment variables em formato `UPPER_SNA
 
 `CoordinatedEngineeringPlan` representa uma Specification e intenção humanas compartilhadas com scopes project-relative obrigatórios. Cada scope preserva seu plano, Exploration, Plan Revision, risks e Verification Plan próprios. `CoordinatedExecutionPreparation` agrega readiness sem criar sessão nem mutar source: qualquer scope obrigatório bloqueado torna o resultado combinado `blocked`. O Plan ID compartilhado representa a intenção quando os planos locais já possuem a mesma identidade; scope e artifact IDs distinguem evidência específica. Não existe mega-orchestrator ou execução multi-agent nesta versão.
 
-## 12. Distribuição por CLI/NPM
+## 12. Review & Security v0.7
 
-O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.6 ainda não é publicada e não há mutação por `postinstall`.
+### 12.1 Command Effect Safety
+
+Verification commands são classificados como `read-only | may-mutate | mutating | unknown`, mas a observação runtime é autoritativa. O runtime captura revisão e fingerprint dos arquivos antes/depois, bloqueia comandos declaradamente mutantes, invalida qualquer execução que altere arquivos visíveis e preserva os paths para inspeção. Não há restauração automática. Comandos exigem checkpoint do mesmo workspace e, por padrão, linked worktree; `workspace-mismatch` e `command-side-effect` são categorias explícitas.
+
+`ProjectCheckpoint.workspaceIdentity` contém somente digests de identidade do root/git dirs. Artifacts v0.6 continuam legíveis, porém um checkpoint legado sem identidade não autoriza execução de novos comandos.
+
+### 12.2 Contexto e lentes de review
+
+`ReviewContext` vincula Specification, Plan Revision, Exploration, Execution Session e `ReviewChangeSet`. Change Review cobre correctness, regressão, scope e integração. Acceptance Review avalia cada critério como `satisfied | partially-satisfied | contradicted | insufficient-evidence | not-applicable`. Security Review é selecionada por domínios e trust boundaries sustentados por evidence.
+
+Candidate production e adversarial verification são interfaces provider-neutral distintas. Todo candidate deve ser desafiado e terminar `confirmed | rejected | insufficient-evidence`; rejeição exige counterevidence. Consolidação ocorre por identidade estruturada de causa-raiz, nunca por similaridade textual, preservando reviewers e evidence de origem.
+
+### 12.3 Readiness, persistência e correção
+
+`ReviewReadiness` é `PASS | PASS_WITH_FINDINGS | BLOCKED`, sem score. Drift do subject, criterion obrigatório não satisfeito, lens ausente, candidate não verificado, evidence insuficiente, unknown residual ou finding HIGH/CRITICAL confirmado bloqueiam. Artifacts ficam em `.azevedo/reviews/<review-context-id>/` e são create-only; o relatório inicial nunca é sobrescrito. O report preserva candidates, verificações e refutações, além de locations, failure scenarios, impactos e verificações propostas dos findings consolidados.
+
+`CorrectionPolicy` é apenas fundação contratual: exige autorização explícita, nova revisão e limite informado entre um e três attempts. A v0.7 não corrige automaticamente, não invoca provider e não concede source write.
+
+## 13. Distribuição por CLI/NPM
+
+O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.7 ainda não é publicada e não há mutação por `postinstall`.
 
 Superfície atual:
 
@@ -583,6 +604,8 @@ npx @azevedo/engineering init
 npx @azevedo/engineering plan --task "Adicionar comportamento"
 npx @azevedo/engineering explore --plan <plan-id> --dry-run
 npx @azevedo/engineering execute --revision <revision-id> --prepare --dry-run
+npx @azevedo/engineering review --execution <execution-id> --base <git-ref> --prepare --dry-run
+npx @azevedo/engineering review --submission <review-submission.json> --dry-run
 ```
 
 Comandos futuros, ainda não implementados:
@@ -594,15 +617,15 @@ npx @azevedo/engineering verify
 npx @azevedo/engineering doctor
 ```
 
-`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, unknowns, conflitos e ambiguidades. `init` planeja antes de escrever e materializa config mínima, `AGENTS.md`, quatro papéis Codex read-only e README local quando não há conflitos. `plan` persiste intenção inicial. `explore` consome Plan + Specification e não altera source code. `execute --prepare` avalia readiness e materializa o handoff persistente sem invocar provider ou escrever source.
+`inspect` é read-only e precede `init`. Seu relatório contém tecnologias, topologia, package manager, scripts, stack profiles, capabilities, unknowns, conflitos e ambiguidades. `init` planeja antes de escrever e materializa config mínima, `AGENTS.md`, quatro papéis Codex read-only e README local quando não há conflitos. `plan` persiste intenção inicial. `explore` consome Plan + Specification e não altera source code. `execute --prepare` avalia readiness e materializa o handoff persistente. `review --prepare` captura o working tree atual ou um git range explícito e valida a cadeia de provenance; `review --submission` valida a saída provider-neutral e persiste o primeiro report. Nenhum deles invoca provider ou escreve source.
 
 `.azevedo/state.json` futuramente registrará versão, resolução, arquivos/blocos gerenciados, hashes e overrides. Arquivos modificados pelo usuário serão preservados e reportados. Configuração global será sempre opt-in.
 
 Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos project-local são a estratégia inicial. Cursor e Claude Code deverão usar o mesmo core.
 
-## 13. Estratégia de testes
+## 14. Estratégia de testes
 
-### 13.1 Testes determinísticos
+### 14.1 Testes determinísticos
 
 - schemas e referências do metamodelo;
 - discovery conservadora e precedência da arquitetura existente;
@@ -616,16 +639,19 @@ Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos projec
 - Knowledge Unit schema, proveniência, seleção/exclusão, dependências, conflitos, razões e orçamento determinísticos.
 - critérios de aceite persistentes e cadeia create-only de Engineering Plan revisions.
 - identidade de diretório/arquivo e contenção nas escritas exclusivas.
+- classificação e observação de command effects, workspace binding e preservação de mutações detectadas;
+- AC Review, risk selection, trust boundaries, challenge adversarial, consolidação e readiness;
+- persistência imutável do primeiro ReviewReport.
 
-### 13.2 Fixtures
+### 14.2 Fixtures
 
 A fixture monorepo representa, sem impor, a referência `apps/api`, `apps/web`, `packages/database`, `packages/contracts` e `packages/shared`, com pnpm/Turborepo. A fixture single-repo representa um projeto existente com escolhas diferentes, incluindo Prisma, para provar que inspection não força Drizzle nem monorepo.
 
-### 13.3 Evals futuros
+### 14.3 Evals futuros
 
 Skills terão casos positivos, negativos, indiretos, incompletos e adversariais. Activation e output quality serão avaliados separadamente. Evals probabilísticos não substituem contract tests e verificações reais.
 
-## 14. Decisões arquiteturais adotadas
+## 15. Decisões arquiteturais adotadas
 
 1. Core harness-agnostic é a fonte de verdade; adapters são finos.
 2. Project inspection é read-only, conservadora e anterior a `init`.
@@ -656,6 +682,11 @@ Skills terão casos positivos, negativos, indiretos, incompletos e adversariais.
 27. Readiness, isolation setup e mutation authorization são fases distintas; sessão executável nasce somente após checkpoint isolado.
 28. Capability de verification ausente só bloqueia quando é requirement obrigatória.
 29. Uma intenção cross-repo possui scopes e readiness coordenados, sem fundir evidência ou verification dos projetos.
+30. Classificação estática de comando orienta, mas comparação before/after é a autoridade sobre side effects.
+31. Verification command exige vínculo ao checkpoint/workspace autorizado e não restaura mudanças automaticamente.
+32. Review consome a cadeia Specification × Revision × Exploration × Execution × ChangeSet.
+33. Candidate finding e adversarial verification são papéis separados; rejeição exige counterevidence.
+34. Security Review é selecionada por risk domain/trust boundary e readiness não usa score.
 
 ADRs relacionados:
 
@@ -670,10 +701,12 @@ ADRs relacionados:
 - [ADR-0009 — Specification Authority and Evidence-backed Exploration](decisions/0009-specification-authority-and-evidence-backed-exploration.md)
 - [ADR-0010 — Guided Execution, Isolation and Session Evidence](decisions/0010-guided-execution-isolation-and-session-evidence.md)
 - [ADR-0011 — Greenfield Exploration and Coordinated Readiness](decisions/0011-greenfield-exploration-and-coordinated-readiness.md)
+- [ADR-0012 — Command Effect Safety and Workspace Binding](decisions/0012-command-effect-safety.md)
+- [ADR-0013 — Evidence-backed Review Architecture](decisions/0013-evidence-backed-review-architecture.md)
 
-## 15. Limite da v0.6.1
+## 16. Limite da v0.7
 
-A v0.6.1 preserva a Guided Execution v0.6 e corrige somente limitações observadas no dogfood, sem loop autônomo:
+A v0.7 preserva a Guided Execution v0.6.1 e acrescenta command-effect safety e review estruturado, sem loop autônomo:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -708,7 +741,7 @@ A v0.6.1 preserva a Guided Execution v0.6 e corrige somente limitações observa
 - persistência create-only, idempotência, conflito e symlink safety;
 - compatibilidade com projetos v0.3 sem migration;
 - resultado `already-initialized` para init sem criações.
-- dezenove Knowledge Units com proveniência fixa e selectors determinísticos, sendo oito de exploration e sete de execution;
+- 21 Knowledge Units com selectors determinísticos, sendo oito de exploration, sete de execution e duas de review v0.7;
 - `ContextManifest` com seleção, exclusões, dependências, conflitos, razões e orçamento;
 - critérios de aceite persistentes e `EngineeringPlanRevision` imutável/encadeada;
 - semântica formal de Plan ID como identidade da intenção inicial;
@@ -733,5 +766,9 @@ A v0.6.1 preserva a Guided Execution v0.6 e corrige somente limitações observa
 - revisão formal para exploration parcial/bloqueada, scope-quality gate e classificação estrutural de testes;
 - capability versus requirement de verification, context core protegido e fases explícitas de readiness/isolation/authorization;
 - contratos provider-neutral de plano e preparation coordenados para Project Groups.
+- Command Effect classification, observação before/after, workspace identity e failure categories específicas;
+- `ReviewContext`, `ReviewChangeSet`, AC Review, trust boundaries, risk domains, finding candidates, adversarial verification, consolidation, readiness e reports imutáveis;
+- CLI `review --execution --base [--head] --prepare`, com working-tree ou git-range explícito;
+- fundação de correction policy append-only, sem executar correções automaticamente.
 
-O trabalho para na preparação e no registro disciplinado de uma Guided Execution. O core possui readiness, contexto, sessão, scope control e verification runtime; não possui loop autônomo nem integração de provider. Review/security runtime, PR/commit/push, deployment, memória/learning, multi-agent, provider selection, update, migration do harness, rollback transacional, `--force`, prompts interativos, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.
+O trabalho para na preparação, submissão estruturada e registro disciplinado de review. O core possui readiness, contexto, sessão, scope control, verification e review runtimes, mas não possui loop autônomo nem integração de provider. Correção automática, PR/commit/push, deployment, memória/learning, multi-agent, provider selection, update, migration do harness, rollback transacional, `--force`, prompts interativos, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.

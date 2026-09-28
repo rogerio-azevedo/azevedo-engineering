@@ -2,8 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
-import type { EvidenceRecord, SubjectRevision } from "../schemas/evidence.js";
+import type { CommandEffect, EvidenceRecord, SubjectRevision } from "../schemas/evidence.js";
 import { EvidenceRecordSchema } from "../schemas/evidence.js";
+import { captureSubjectRevision } from "./subject-revision.js";
+import {
+  captureWorkspaceFileState,
+  changedWorkspacePaths,
+  commandEffectAssessment,
+} from "./command-effect.js";
 
 function digest(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -81,10 +87,54 @@ export function runPackageScriptVerifier(input: {
   phase?: "verification" | "tdd-red" | "tdd-green";
   subjectRevision: SubjectRevision;
   timeoutMs?: number;
+  subjectRoot?: string;
+  commandEffect?: CommandEffect;
+  commandEffectBasis?: readonly string[];
 }): EvidenceRecord {
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
   const [executable, args] = PACKAGE_MANAGER_COMMANDS[input.packageManager](input.script);
+  const subjectRoot = resolve(input.subjectRoot ?? input.root);
+  const declared = input.commandEffect ?? "unknown";
+  const basis = input.commandEffectBasis ?? ["No static command-effect classification was supplied."];
+  const before = captureSubjectRevision(subjectRoot);
+  const beforeFiles = captureWorkspaceFileState(subjectRoot);
+  const staleSubject = before.head !== input.subjectRevision.head ||
+    before.worktreeDigest !== input.subjectRevision.worktreeDigest ||
+    before.dirty !== input.subjectRevision.dirty;
+
+  if (declared === "mutating" || staleSubject) {
+    const summary = declared === "mutating"
+      ? `${input.script} was not executed because mutating commands cannot be used as verification.`
+      : `${input.script} was not executed because the supplied subject revision is stale.`;
+    const outputDigest = digest(summary);
+    return EvidenceRecordSchema.parse({
+      id: evidenceId(input.verifierId, startedAt, outputDigest, input.taskId, input.scope, input.phase ?? "verification"),
+      taskId: input.taskId,
+      verifierId: input.verifierId,
+      phase: input.phase ?? "verification",
+      status: "fail",
+      scope: input.scope,
+      command: null,
+      startedAt,
+      durationMs: Date.now() - started,
+      exitCode: null,
+      subjectRevision: before,
+      outputDigest,
+      summary,
+      reason: null,
+      waiverId: null,
+      commandEffect: {
+        declared,
+        basis: [...basis],
+        observed: "not-run",
+        unexpected: false,
+        affectedPaths: [],
+        before,
+        after: null,
+      },
+    });
+  }
   const result = spawnSync(executable, args, {
     cwd: resolve(input.root),
     encoding: "utf8",
@@ -93,10 +143,16 @@ export function runPackageScriptVerifier(input: {
     maxBuffer: 5 * 1024 * 1024,
   });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-  const outputDigest = digest(output);
+  const after = captureSubjectRevision(subjectRoot);
+  const affectedPaths = changedWorkspacePaths(beforeFiles, captureWorkspaceFileState(subjectRoot));
+  const assessment = commandEffectAssessment({ declared, basis, before, after, affectedPaths });
+  const outputDigest = digest(`${output}\ncommand-effect:${JSON.stringify(assessment)}`);
   const exitCode = result.status;
-  const passed = exitCode === 0 && !result.error;
-  const summary = passed
+  const commandPassed = exitCode === 0 && !result.error;
+  const passed = commandPassed && affectedPaths.length === 0;
+  const summary = affectedPaths.length > 0
+    ? `${input.script} changed verification-visible files: ${affectedPaths.join(", ")}. Changes were preserved for inspection.`
+    : passed
     ? `${input.script} completed successfully.`
     : `${input.script} failed${result.error ? `: ${result.error.message}` : ` with exit code ${String(exitCode)}`}.`;
 
@@ -111,10 +167,11 @@ export function runPackageScriptVerifier(input: {
     startedAt,
     durationMs: Date.now() - started,
     exitCode,
-    subjectRevision: input.subjectRevision,
+    subjectRevision: after,
     outputDigest,
     summary,
     reason: null,
     waiverId: null,
+    commandEffect: assessment,
   });
 }

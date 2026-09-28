@@ -167,3 +167,17 @@ test("execute CLI prepares deterministic context in dry-run without mutating sou
   assert.ok(report.operations.every((operation) => operation.artifact.startsWith(".azevedo/executions/")));
   assert.equal(report.operations.length, 1);
 });
+
+test("review CLI exposes provider-neutral working-tree and git-range preparation", () => {
+  const help = runCli("review", "--help");
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /--execution <execution-id>/);
+  assert.match(help.stdout, /--base <git-ref>/);
+  assert.match(help.stdout, /--head <git-ref>/);
+  assert.match(help.stdout, /--submission <file>/);
+  assert.match(help.stdout, /no coding provider is invoked/);
+
+  const invalid = runCli("review", ".", "--prepare");
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /--execution is required/);
+});

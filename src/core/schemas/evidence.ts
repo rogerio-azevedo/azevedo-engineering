@@ -17,6 +17,41 @@ export const SubjectRevisionSchema = z.object({
 
 export type SubjectRevision = z.infer<typeof SubjectRevisionSchema>;
 
+export const CommandEffectSchema = z.enum([
+  "read-only",
+  "may-mutate",
+  "mutating",
+  "unknown",
+]);
+
+export const CommandEffectAssessmentSchema = z.object({
+  declared: CommandEffectSchema,
+  basis: z.array(z.string().min(1)).min(1),
+  observed: z.enum(["not-run", "unchanged", "changed", "unavailable"]),
+  unexpected: z.boolean(),
+  affectedPaths: z.array(z.string().min(1)),
+  before: SubjectRevisionSchema,
+  after: SubjectRevisionSchema.nullable(),
+}).strict().superRefine((assessment, context) => {
+  if ((assessment.observed === "changed") !== (assessment.affectedPaths.length > 0)) {
+    context.addIssue({
+      code: "custom",
+      path: ["affectedPaths"],
+      message: "Changed command effects require affected paths, and unchanged effects cannot list them.",
+    });
+  }
+  if (assessment.unexpected && assessment.observed !== "changed") {
+    context.addIssue({
+      code: "custom",
+      path: ["unexpected"],
+      message: "Only an observed change can be unexpected.",
+    });
+  }
+});
+
+export type CommandEffect = z.infer<typeof CommandEffectSchema>;
+export type CommandEffectAssessment = z.infer<typeof CommandEffectAssessmentSchema>;
+
 export const EvidenceRecordSchema = z
   .object({
     id: z.string().min(1),
@@ -34,6 +69,7 @@ export const EvidenceRecordSchema = z
     summary: z.string().min(1),
     reason: z.string().min(1).nullable(),
     waiverId: z.string().min(1).nullable(),
+    commandEffect: CommandEffectAssessmentSchema.nullable().default(null),
   })
   .superRefine((record, context) => {
     if (["skipped", "waived", "not_applicable"].includes(record.status) && !record.reason) {
