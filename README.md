@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.7 acrescenta command-effect safety e Review & Security estruturados à Guided Execution, mantendo o core provider-neutral e toda escrita de source sob autorização explícita.
+Engineering harness reutilizável para coding agents. A v0.7.1 endurece a semântica evidence-backed de Review & Security, mantendo o core provider-neutral, compatibilidade com artifacts v0.7 e toda escrita de source sob autorização explícita.
 
 ## Inspect
 
@@ -129,6 +129,8 @@ Sem `--head`, o comando revisa o working tree atual e exige que ele corresponda 
 
 O core expõe interfaces separadas para produção de finding candidates e verificação adversarial. Cada acceptance criterion recebe um estado explícito, cada candidate precisa ser confirmado, rejeitado com counterevidence ou marcado como evidence insuficiente, e findings só são consolidados por causa-raiz estruturada. `ReviewReadiness` retorna `PASS`, `PASS_WITH_FINDINGS` ou `BLOCKED`, sem score. O primeiro `ReviewReport` é create-only e uma correction policy futura continua limitada, append-only e dependente de nova autorização/revisão.
 
+Na v0.7.1, residual unknowns estruturados declaram explicitamente `blocking | non-blocking`, evidence, impacto e provenance; strings históricas continuam legíveis e bloqueantes. Um required AC marcado `not-applicable` só é aceito com uma declaração de responsabilidade sustentada por artifact/contract e confirmada por reviewer logicamente distinto. Runs podem registrar invocation, adapter, modelo opcional e digest do contexto: o relatório diferencia separação apenas lógica de invocações independentes, mas nunca infere independência de provider. Integration surfaces e sinais sem mapping viram gaps de `RiskCoverage` que exigem disposition evidence-backed, em vez de significarem automaticamente “seguro” ou “bloqueado”.
+
 Exit codes:
 
 | Código | Significado |
@@ -155,6 +157,6 @@ pnpm verify
 
 O package expõe o bin `azevedo`, preparando uso futuro via `npx @azevedo/engineering inspect`, `init`, `plan`, `explore`, `execute` e `review`. A publicação no NPM ainda não faz parte desta versão.
 
-Esta versão mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Ela prepara e registra Guided Execution e Review & Security, mas não implementa correção autônoma, provider API, commit/push, update, plugin, hooks, MCP, memory ou learning.
+Esta versão mantém os contratos da foundation, classification de risco, verification por scope e evidence/waivers. Ela prepara e registra Guided Execution e Review & Security, mas não implementa correção autônoma, provider API, commit/push, update, plugin, hooks, MCP, memory ou learning. A taxonomia completa de source/artifact/harness mutation também permanece futura; a proteção before/after atual continua autoritativa.
 
 Consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para os limites e decisões do projeto.

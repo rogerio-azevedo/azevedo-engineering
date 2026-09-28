@@ -10,7 +10,7 @@ import type { EngineeringPlanRevision } from "../planning/plan-revision.js";
 import { EngineeringPlanRevisionSchema } from "../planning/plan-revision.js";
 import type { FeatureSpecification } from "../specification/feature-specification.js";
 import { FeatureSpecificationSchema } from "../specification/feature-specification.js";
-import { identifyTrustBoundaries, selectSecurityDomains } from "./risk-selection.js";
+import { assessRiskCoverage, identifyTrustBoundaries, selectSecurityDomains } from "./risk-selection.js";
 import {
   ReviewContextSchema,
   ReviewPreparationSchema,
@@ -137,6 +137,7 @@ export function prepareReview(rawInput: PrepareReviewInput): ReviewPreparation {
 
   const trustBoundaries = identifyTrustBoundaries(exploration, evidenceBySourceId);
   const securityDomains = selectSecurityDomains(exploration, evidenceBySourceId, trustBoundaries);
+  const riskCoverage = assessRiskCoverage(exploration, evidenceBySourceId);
   const knowledgeManifest = resolveContextManifest(KNOWLEDGE_CATALOG, {
     phase: "review",
     taskType: revision.planSnapshot.task.type,
@@ -161,10 +162,11 @@ export function prepareReview(rawInput: PrepareReviewInput): ReviewPreparation {
     evidence: evidence.sort((left, right) => left.id.localeCompare(right.id)),
     trustBoundaries,
     securityDomains,
+    riskCoverage,
     requiredLenses: [
       "change" as const,
       "acceptance" as const,
-      ...(securityDomains.length > 0 ? ["security" as const] : []),
+      ...(securityDomains.length > 0 || riskCoverage.gaps.length > 0 ? ["security" as const] : []),
     ],
     knowledgeManifest,
   };

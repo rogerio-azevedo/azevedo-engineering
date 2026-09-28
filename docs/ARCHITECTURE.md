@@ -1,6 +1,6 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Review & Security v0.7
+- Status: base arquitetural aprovada; Review Hardening v0.7.1
 - Atualização: 2026-09-28
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
@@ -39,7 +39,7 @@ Uma task não termina porque o código foi escrito. `Done` é um gate baseado em
 - Ser instalável, auditável, reparável e removível sem sobrescrever trabalho do usuário.
 - Aprender com sessões sem promover automaticamente observações a políticas distribuídas.
 
-### 2.2 Não objetivos da v0.7
+### 2.2 Não objetivos da v0.7.1
 
 - Publicar o pacote NPM.
 - Construir um plugin Codex completo.
@@ -265,7 +265,7 @@ Um adapter traduz o modelo canônico para um harness. Ele mapeia caminhos, papé
 
 ### 5.7 Hooks
 
-Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.7 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
+Hooks são aceleradores futuros. Podem formatar, alertar ou executar checks rápidos, mas estão fora da v0.7.1 e jamais sustentam sozinhos correctness, segurança ou Definition of Done.
 
 ### 5.8 Project inspection e perfis de stack
 
@@ -476,7 +476,7 @@ O adapter inicial materializa contratos para `AGENTS.md` e quatro arquivos `.cod
 
 ## 10. Estrutura de diretórios
 
-A v0.7 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
+A v0.7.1 mantém um único package para reduzir cerimônia. A separação interna já permite extrair packages quando distribuição e compatibilidade exigirem:
 
 ```text
 azevedo-engineering/
@@ -571,7 +571,7 @@ Artifacts persistem somente nomes de environment variables em formato `UPPER_SNA
 
 `CoordinatedEngineeringPlan` representa uma Specification e intenção humanas compartilhadas com scopes project-relative obrigatórios. Cada scope preserva seu plano, Exploration, Plan Revision, risks e Verification Plan próprios. `CoordinatedExecutionPreparation` agrega readiness sem criar sessão nem mutar source: qualquer scope obrigatório bloqueado torna o resultado combinado `blocked`. O Plan ID compartilhado representa a intenção quando os planos locais já possuem a mesma identidade; scope e artifact IDs distinguem evidência específica. Não existe mega-orchestrator ou execução multi-agent nesta versão.
 
-## 12. Review & Security v0.7
+## 12. Review & Security v0.7.1
 
 ### 12.1 Command Effect Safety
 
@@ -591,9 +591,21 @@ Candidate production e adversarial verification são interfaces provider-neutral
 
 `CorrectionPolicy` é apenas fundação contratual: exige autorização explícita, nova revisão e limite informado entre um e três attempts. A v0.7 não corrige automaticamente, não invoca provider e não concede source write.
 
+### 12.4 Hardening semântico
+
+`ReviewUnknown` substitui texto livre nas novas submissões por uma identidade determinística com evidence, impacto, razão, relações com AC/domínio de risco, provenance e disposition `blocking | non-blocking`. Unknown não bloqueante produz `PASS_WITH_FINDINGS` quando nenhuma outra razão bloqueia; unknown bloqueante preserva `BLOCKED`. Strings da v0.7 continuam aceitas para leitura e são conservadoramente bloqueantes.
+
+`not-applicable` é uma declaração de scope/responsabilidade. Para um required AC, ela só é defensável com `NotApplicableScopeClaim` vinculado à evidence de artifact/contract e confirmado, com evidence direta ou corroborada, por reviewer logicamente distinto. Uma disposition de unknown nunca substitui o estado do AC: `insufficient-evidence`, contradição ou N/A fraco continuam bloqueando.
+
+Provenance de reviewer runs é provider-neutral e opcional: `runId`, invocation, adapter, modelo quando exposto e digest do contexto. O relatório distingue `logical-only` de `independent-invocation` e fixa `providerIndependence: not-claimed`; IDs de papéis diferentes não provam independência operacional. O digest da submissão liga a decisão ao input exato.
+
+`RiskCoverage` torna explícitos capabilities/sinais mapeados e gaps evidence-backed. Todo gap precisa de security review com impacto e disposition. Falta de avaliação bloqueia; uma avaliação pode ser não bloqueante com evidence utilizável, enquanto impacto crítico obrigatoriamente bloqueia. Assim, ausência de mapping não significa segurança e tampouco gera bloqueio definitivo por si só.
+
+A taxonomia completa de mutation por ownership foi avaliada e adiada. `dist/` e outras saídas geradas ignoradas continuam fora do fingerprint de source, enquanto qualquer mutation inesperada visível continua invalidando verification. Distinguir source, artifact, harness e unknown mutation exige um contrato de ownership/lifecycle antes de entrar no runtime.
+
 ## 13. Distribuição por CLI/NPM
 
-O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.7 ainda não é publicada e não há mutação por `postinstall`.
+O pacote é `@azevedo/engineering` e expõe o bin `azevedo`, preparando execução por `npx @azevedo/engineering`. A v0.7.1 ainda não é publicada e não há mutação por `postinstall`.
 
 Superfície atual:
 
@@ -641,6 +653,7 @@ Um plugin Codex poderá ser destino futuro do adapter, mas CLI + arquivos projec
 - identidade de diretório/arquivo e contenção nas escritas exclusivas.
 - classificação e observação de command effects, workspace binding e preservação de mutações detectadas;
 - AC Review, risk selection, trust boundaries, challenge adversarial, consolidação e readiness;
+- blocking/non-blocking unknowns, N/A com responsibility claim, invocation provenance e risk coverage gaps;
 - persistência imutável do primeiro ReviewReport.
 
 ### 14.2 Fixtures
@@ -687,6 +700,10 @@ Skills terão casos positivos, negativos, indiretos, incompletos e adversariais.
 32. Review consome a cadeia Specification × Revision × Exploration × Execution × ChangeSet.
 33. Candidate finding e adversarial verification são papéis separados; rejeição exige counterevidence.
 34. Security Review é selecionada por risk domain/trust boundary e readiness não usa score.
+35. Unknowns novos possuem disposition explícita; unknown legado sem disposition permanece bloqueante.
+36. Required AC em N/A exige claim de responsabilidade com evidence forte e challenge logicamente distinto.
+37. Invocation provenance pode provar invocações distintas, nunca independência de provider por inferência.
+38. Coverage gap exige decisão evidence-backed e pode ser bloqueante ou não bloqueante conforme impacto.
 
 ADRs relacionados:
 
@@ -703,10 +720,11 @@ ADRs relacionados:
 - [ADR-0011 — Greenfield Exploration and Coordinated Readiness](decisions/0011-greenfield-exploration-and-coordinated-readiness.md)
 - [ADR-0012 — Command Effect Safety and Workspace Binding](decisions/0012-command-effect-safety.md)
 - [ADR-0013 — Evidence-backed Review Architecture](decisions/0013-evidence-backed-review-architecture.md)
+- [ADR-0014 — Review Semantic Hardening](decisions/0014-review-semantic-hardening.md)
 
-## 16. Limite da v0.7
+## 16. Limite da v0.7.1
 
-A v0.7 preserva a Guided Execution v0.6.1 e acrescenta command-effect safety e review estruturado, sem loop autônomo:
+A v0.7.1 preserva a Guided Execution v0.6.1 e o Review & Security v0.7, endurecendo sua precisão semântica sem loop autônomo:
 
 - schemas do metamodelo;
 - manifest/perfis iniciais da stack Azevedo;
@@ -770,5 +788,9 @@ A v0.7 preserva a Guided Execution v0.6.1 e acrescenta command-effect safety e r
 - `ReviewContext`, `ReviewChangeSet`, AC Review, trust boundaries, risk domains, finding candidates, adversarial verification, consolidation, readiness e reports imutáveis;
 - CLI `review --execution --base [--head] --prepare`, com working-tree ou git-range explícito;
 - fundação de correction policy append-only, sem executar correções automaticamente.
+- `ReviewUnknown` estruturado com disposition e compatibilidade conservadora com strings v0.7;
+- `NotApplicableScopeClaim` verificado para required ACs e cenários cross-project;
+- provenance de invocation/submission sem alegação implícita de independência de provider;
+- `RiskCoverage` e avaliações explícitas para surfaces/signals sem mapping.
 
 O trabalho para na preparação, submissão estruturada e registro disciplinado de review. O core possui readiness, contexto, sessão, scope control, verification e review runtimes, mas não possui loop autônomo nem integração de provider. Correção automática, PR/commit/push, deployment, memória/learning, multi-agent, provider selection, update, migration do harness, rollback transacional, `--force`, prompts interativos, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.

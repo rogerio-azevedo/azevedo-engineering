@@ -10,6 +10,8 @@ const EvidenceIdSchema = z.string().regex(/^review-evidence-[a-f0-9]{12}$/);
 const TrustBoundaryIdSchema = z.string().regex(/^trust-boundary-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{8}$/);
 const CandidateFindingIdSchema = z.string().regex(/^finding-candidate-[a-f0-9]{12}$/);
 const FindingIdSchema = z.string().regex(/^review-finding-[a-f0-9]{12}$/);
+const ReviewUnknownIdSchema = z.string().regex(/^review-unknown-[a-f0-9]{12}$/);
+const RiskCoverageGapIdSchema = z.string().regex(/^risk-coverage-gap-[a-f0-9]{12}$/);
 
 export const ReviewEvidenceQualitySchema = z.enum([
   "direct",
@@ -81,6 +83,27 @@ export const SecurityRiskDomainSchema = z.object({
   });
 });
 
+export const RiskCoverageGapSchema = z.object({
+  id: RiskCoverageGapIdSchema,
+  sourceKind: z.enum(["integration-surface", "risk-signal"]),
+  sourceReference: z.string().min(1),
+  description: z.string().min(1),
+  evidenceIds: z.array(EvidenceIdSchema).min(1),
+}).strict();
+
+export const RiskCoverageSchema = z.object({
+  status: z.enum(["complete", "incomplete"]),
+  mappedSurfaceIds: z.array(z.string().min(1)),
+  mappedRiskSignals: z.array(z.string().min(1)),
+  gaps: z.array(RiskCoverageGapSchema),
+}).strict().superRefine((coverage, context) => {
+  if ((coverage.status === "incomplete") !== (coverage.gaps.length > 0)) context.addIssue({
+    code: "custom",
+    path: ["status"],
+    message: "Risk coverage is incomplete if and only if one or more evidence-backed gaps exist.",
+  });
+});
+
 export const ReviewContextSchema = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal("review-context"),
@@ -97,6 +120,7 @@ export const ReviewContextSchema = z.object({
   evidence: z.array(ReviewEvidenceSchema),
   trustBoundaries: z.array(TrustBoundarySchema),
   securityDomains: z.array(SecurityRiskDomainSchema),
+  riskCoverage: RiskCoverageSchema.optional(),
   requiredLenses: z.array(z.enum(["change", "acceptance", "security"])).min(2),
   knowledgeManifest: ContextManifestSchema,
 }).strict().superRefine((review, context) => {
@@ -118,9 +142,15 @@ export const ReviewContextSchema = z.object({
       code: "custom", path: ["securityDomains", index, "trustBoundaryIds"], message: `Unknown trust boundary: ${id}`,
     });
   }
-  const securityRequired = review.securityDomains.some((domain) => domain.selected);
+  for (const [index, gap] of (review.riskCoverage?.gaps ?? []).entries()) {
+    for (const id of gap.evidenceIds) if (!evidenceIds.has(id)) context.addIssue({
+      code: "custom", path: ["riskCoverage", "gaps", index, "evidenceIds"], message: `Unknown review evidence: ${id}`,
+    });
+  }
+  const securityRequired = review.securityDomains.some((domain) => domain.selected) ||
+    (review.riskCoverage?.gaps.length ?? 0) > 0;
   if (securityRequired !== review.requiredLenses.includes("security")) context.addIssue({
-    code: "custom", path: ["requiredLenses"], message: "Security is required if and only if an evidence-backed risk domain is selected.",
+    code: "custom", path: ["requiredLenses"], message: "Security is required if and only if an evidence-backed risk domain or coverage gap is present.",
   });
 });
 
@@ -170,6 +200,7 @@ export const ReviewFindingCandidateSchema = z.object({
   source: z.object({
     reviewerId: z.string().min(1),
     lens: z.enum(["change", "acceptance", "security"]),
+    runId: z.string().min(1).optional(),
   }).strict(),
   category: z.enum(["code", "security", "architecture", "acceptance", "test", "scope"]),
   severity: z.enum(["critical", "high", "medium", "low"]),
@@ -196,6 +227,7 @@ export const ReviewFindingCandidateSchema = z.object({
 export const FindingVerificationSchema = z.object({
   candidateId: CandidateFindingIdSchema,
   verifierId: z.string().min(1),
+  runId: z.string().min(1).optional(),
   outcome: z.enum(["confirmed", "rejected", "insufficient-evidence"]),
   attemptedRefutation: z.string().min(1),
   contraryEvidenceIds: z.array(EvidenceIdSchema),
@@ -214,6 +246,29 @@ export const FindingVerificationSchema = z.object({
   });
 });
 
+export const NotApplicableScopeClaimSchema = z.object({
+  basis: z.enum(["project-responsibility", "contract-boundary", "cross-project-ownership"]),
+  responsibleTarget: z.string().min(1),
+  evidenceIds: z.array(EvidenceIdSchema).min(1),
+  rationale: z.string().min(1),
+  claimedByReviewerId: z.string().min(1),
+  verification: z.object({
+    verifierId: z.string().min(1),
+    runId: z.string().min(1).optional(),
+    outcome: z.enum(["confirmed", "rejected", "insufficient-evidence"]),
+    evidenceIds: z.array(EvidenceIdSchema).min(1),
+    rationale: z.string().min(1),
+    evidenceQuality: ReviewEvidenceQualitySchema,
+  }).strict(),
+}).strict().superRefine((claim, context) => {
+  if (claim.claimedByReviewerId === claim.verification.verifierId) context.addIssue({
+    code: "custom", path: ["verification", "verifierId"], message: "A required scope claim needs a logically distinct verifier.",
+  });
+  if (claim.verification.outcome === "confirmed" && claim.verification.evidenceQuality === "insufficient") context.addIssue({
+    code: "custom", path: ["verification", "evidenceQuality"], message: "A confirmed scope claim cannot have insufficient evidence.",
+  });
+});
+
 export const AcceptanceCriterionReviewSchema = z.object({
   criterionId: PersistedAcceptanceCriterionSchema.shape.id,
   status: z.enum([
@@ -226,21 +281,80 @@ export const AcceptanceCriterionReviewSchema = z.object({
   evidenceIds: z.array(EvidenceIdSchema),
   candidateFindingIds: z.array(CandidateFindingIdSchema),
   rationale: z.string().min(1),
+  scopeClaim: NotApplicableScopeClaimSchema.optional(),
 }).strict().superRefine((review, context) => {
   if (["satisfied", "not-applicable"].includes(review.status) && review.evidenceIds.length === 0) context.addIssue({
     code: "custom",
     path: ["evidenceIds"],
     message: `${review.status} acceptance requires direct evidence.`,
   });
+  if (review.status !== "not-applicable" && review.scopeClaim) context.addIssue({
+    code: "custom",
+    path: ["scopeClaim"],
+    message: "Only a not-applicable acceptance review can carry a scope responsibility claim.",
+  });
 });
+
+export const ReviewInvocationProvenanceSchema = z.object({
+  invocationId: z.string().min(1),
+  adapterId: z.string().min(1).optional(),
+  model: z.object({
+    id: z.string().min(1),
+    version: z.string().min(1).nullable(),
+  }).strict().optional(),
+  contextDigest: DigestSchema,
+}).strict();
 
 export const ReviewerRunSchema = z.object({
   reviewerId: z.string().min(1),
-  lens: z.enum(["change", "acceptance", "security"]),
+  lens: z.enum(["change", "acceptance", "security", "adversarial"]),
   provider: z.string().min(1),
+  runId: z.string().min(1).optional(),
+  provenance: ReviewInvocationProvenanceSchema.optional(),
   reviewedEvidenceIds: z.array(EvidenceIdSchema).min(1),
   completed: z.boolean(),
 }).strict();
+
+export const ReviewUnknownSchema = z.object({
+  schemaVersion: z.literal(1),
+  id: ReviewUnknownIdSchema,
+  description: z.string().min(1),
+  disposition: z.enum(["blocking", "non-blocking"]),
+  evidenceQuality: ReviewEvidenceQualitySchema,
+  evidenceIds: z.array(EvidenceIdSchema).min(1),
+  relatedAcceptanceCriterionIds: z.array(PersistedAcceptanceCriterionSchema.shape.id),
+  relatedRiskDomainIds: z.array(SecurityRiskDomainSchema.shape.id),
+  source: z.object({
+    reviewerId: z.string().min(1),
+    runId: z.string().min(1).optional(),
+  }).strict(),
+  impact: z.string().min(1),
+  reason: z.string().min(1),
+}).strict().superRefine((unknown, context) => {
+  if (unknown.disposition === "non-blocking" && unknown.evidenceQuality === "insufficient") context.addIssue({
+    code: "custom", path: ["evidenceQuality"], message: "A non-blocking unknown disposition requires usable evidence.",
+  });
+});
+
+export const RiskCoverageReviewSchema = z.object({
+  gapId: RiskCoverageGapIdSchema,
+  reviewerId: z.string().min(1),
+  impact: z.enum(["low", "material", "critical"]),
+  disposition: z.enum(["blocking", "non-blocking"]),
+  evidenceQuality: ReviewEvidenceQualitySchema,
+  evidenceIds: z.array(EvidenceIdSchema).min(1),
+  rationale: z.string().min(1),
+}).strict().superRefine((review, context) => {
+  if (review.impact === "critical" && review.disposition !== "blocking") context.addIssue({
+    code: "custom", path: ["disposition"], message: "Critical coverage uncertainty must be blocking.",
+  });
+  if (review.impact === "low" && review.disposition !== "non-blocking") context.addIssue({
+    code: "custom", path: ["disposition"], message: "Low-impact coverage uncertainty must be non-blocking.",
+  });
+  if (review.disposition === "non-blocking" && review.evidenceQuality === "insufficient") context.addIssue({
+    code: "custom", path: ["evidenceQuality"], message: "A non-blocking coverage disposition requires usable evidence.",
+  });
+});
 
 export const ReviewSubmissionSchema = z.object({
   contextId: ReviewContextSchema.shape.id,
@@ -248,7 +362,8 @@ export const ReviewSubmissionSchema = z.object({
   acceptanceReviews: z.array(AcceptanceCriterionReviewSchema),
   candidates: z.array(ReviewFindingCandidateSchema),
   findingVerifications: z.array(FindingVerificationSchema),
-  residualUnknowns: z.array(z.string().min(1)),
+  residualUnknowns: z.array(z.union([z.string().min(1), ReviewUnknownSchema])),
+  riskCoverageReviews: z.array(RiskCoverageReviewSchema).optional(),
 }).strict();
 
 export const ConsolidatedFindingSchema = z.object({
@@ -288,6 +403,9 @@ export const ReviewReadinessSchema = z.object({
       "finding-not-verified",
       "blocking-finding",
       "residual-unknown",
+      "acceptance-not-applicable-unsubstantiated",
+      "risk-coverage-unassessed",
+      "risk-coverage-gap",
     ]),
     message: z.string().min(1),
     blocking: z.boolean(),
@@ -311,6 +429,17 @@ export const CorrectionAttemptSchema = z.object({
   evidenceIds: z.array(z.string().min(1)),
 }).strict();
 
+export const AdversarialProvenanceAssessmentSchema = z.object({
+  candidateId: CandidateFindingIdSchema,
+  reviewerId: z.string().min(1),
+  verifierId: z.string().min(1),
+  candidateRunId: z.string().min(1).nullable(),
+  verifierRunId: z.string().min(1).nullable(),
+  separation: z.enum(["logical-only", "independent-invocation"]),
+  providerIndependence: z.literal("not-claimed"),
+  basis: z.string().min(1),
+}).strict();
+
 export const ReviewReportSchema = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal("review-report"),
@@ -327,7 +456,10 @@ export const ReviewReportSchema = z.object({
   rejectedCandidateIds: z.array(CandidateFindingIdSchema),
   insufficientCandidateIds: z.array(CandidateFindingIdSchema),
   reviewerRuns: z.array(ReviewerRunSchema),
-  residualUnknowns: z.array(z.string().min(1)),
+  residualUnknowns: z.array(z.union([z.string().min(1), ReviewUnknownSchema])),
+  riskCoverageReviews: z.array(RiskCoverageReviewSchema).optional(),
+  adversarialProvenance: z.array(AdversarialProvenanceAssessmentSchema).optional(),
+  submissionDigest: DigestSchema.optional(),
   correctionPolicy: CorrectionPolicySchema.nullable(),
   correctionAttempts: z.array(CorrectionAttemptSchema),
 }).strict().superRefine((report, context) => {
@@ -345,6 +477,10 @@ export type ReviewContext = z.infer<typeof ReviewContextSchema>;
 export type ReviewPreparation = z.infer<typeof ReviewPreparationSchema>;
 export type ReviewFindingCandidate = z.infer<typeof ReviewFindingCandidateSchema>;
 export type FindingVerification = z.infer<typeof FindingVerificationSchema>;
+export type ReviewUnknown = z.infer<typeof ReviewUnknownSchema>;
+export type RiskCoverage = z.infer<typeof RiskCoverageSchema>;
+export type RiskCoverageReview = z.infer<typeof RiskCoverageReviewSchema>;
+export type ReviewerRun = z.infer<typeof ReviewerRunSchema>;
 export type ReviewSubmission = z.infer<typeof ReviewSubmissionSchema>;
 export type ConsolidatedFinding = z.infer<typeof ConsolidatedFindingSchema>;
 export type ReviewReadiness = z.infer<typeof ReviewReadinessSchema>;

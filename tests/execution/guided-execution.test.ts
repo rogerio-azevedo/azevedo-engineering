@@ -611,6 +611,38 @@ test("verification detects and preserves an unexpected source mutation as failed
   assert.equal(readFileSync(join(root, "source.ts"), "utf8"), "mutated\n");
 });
 
+test("verification keeps generated build output outside the review-visible source mutation set", () => {
+  const root = mkdtempSync(join(tmpdir(), "azevedo-verification-build-output-"));
+  write(root, "package.json", `${JSON.stringify({
+    name: "build-output",
+    packageManager: "pnpm@11.24.0",
+    scripts: { build: "node -e \"require('fs').mkdirSync('dist',{recursive:true});require('fs').writeFileSync('dist/output.js','built')\"" },
+  })}\n`);
+  write(root, "source.ts", "original\n");
+  const inspection = createInspectResult(root);
+  assert.equal(inspection.kind, "project");
+  if (inspection.kind !== "project") return;
+  const checkpoint = captureProjectCheckpoint(root);
+  const result = runVerificationTarget({
+    taskId: "task-build-output",
+    projectRoot: root,
+    inspection,
+    target: {
+      targetId: "verify.build::.", verifierId: "verify.build", scope: ".", required: true, available: true,
+      packagePath: ".", script: "build", riskReduced: "Compilation.", evidenceProduced: "Build result.", reason: "Discovered.",
+    },
+    subjectRevision: checkpoint.subjectRevision,
+    authorizedCheckpoint: checkpoint,
+    requireIsolatedWorkspace: false,
+  });
+  const evidence = result.evidence as { commandEffect: { observed: string; affectedPaths: string[] }; status: string };
+
+  assert.equal(result.outcome, "passed");
+  assert.equal(evidence.commandEffect.observed, "unchanged");
+  assert.deepEqual(evidence.commandEffect.affectedPaths, []);
+  assert.equal(readFileSync(join(root, "source.ts"), "utf8"), "original\n");
+});
+
 test("verification command requires the authorized workspace and linked isolation by default", () => {
   const root = mkdtempSync(join(tmpdir(), "azevedo-verification-workspace-"));
   write(root, "package.json", `${JSON.stringify({

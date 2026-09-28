@@ -1,5 +1,6 @@
 import type { ExplorationArtifact } from "../exploration/exploration-artifact.js";
 import {
+  RiskCoverageSchema,
   SecurityRiskDomainSchema,
   TrustBoundarySchema,
   reviewDigest,
@@ -199,4 +200,75 @@ export function selectSecurityDomains(
       trustBoundaryIds: boundaryIds,
     })];
   }).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function assessRiskCoverage(
+  exploration: ExplorationArtifact,
+  evidenceBySourceId: ReadonlyMap<string, ReviewEvidence>,
+  rules: readonly DomainRule[] = DEFAULT_SECURITY_DOMAIN_RULES,
+) {
+  const mappedCapabilities = new Set([
+    ...Object.keys(BOUNDARY_BY_CAPABILITY),
+    ...rules.flatMap((rule) => rule.capabilities),
+  ]);
+  const mappedSignals = new Set(rules.flatMap((rule) => rule.signals));
+  const mappedSurfaceIds: string[] = [];
+  const gaps: Array<{
+    id: string;
+    sourceKind: "integration-surface" | "risk-signal";
+    sourceReference: string;
+    description: string;
+    evidenceIds: string[];
+  }> = [];
+
+  for (const surface of exploration.integrationSurfaces) {
+    if (mappedCapabilities.has(surface.capability)) {
+      mappedSurfaceIds.push(surface.id);
+      continue;
+    }
+    const evidenceIds = [...new Set(surface.evidenceIds.flatMap((id) => {
+      const evidence = evidenceBySourceId.get(id);
+      return evidence ? [evidence.id] : [];
+    }))].sort();
+    if (evidenceIds.length === 0) continue;
+    const seed = { sourceKind: "integration-surface", sourceReference: surface.id, evidenceIds };
+    gaps.push({
+      id: `risk-coverage-gap-${reviewDigest(seed)}`,
+      sourceKind: "integration-surface",
+      sourceReference: surface.id,
+      description: `Integration capability ${surface.capability} has evidence but no configured security mapping.`,
+      evidenceIds,
+    });
+  }
+
+  const findingsBySignal = new Map<string, string[]>();
+  for (const finding of exploration.risk.findings) findingsBySignal.set(finding.signal, [
+    ...(findingsBySignal.get(finding.signal) ?? []),
+    ...finding.evidenceIds,
+  ]);
+  for (const [signal, sourceEvidenceIds] of findingsBySignal) {
+    if (mappedSignals.has(signal)) continue;
+    const evidenceIds = [...new Set(sourceEvidenceIds.flatMap((id) => {
+      const evidence = evidenceBySourceId.get(id);
+      return evidence ? [evidence.id] : [];
+    }))].sort();
+    if (evidenceIds.length === 0) continue;
+    const sourceReference = `risk-signal:${signal}`;
+    const seed = { sourceKind: "risk-signal", sourceReference, evidenceIds };
+    gaps.push({
+      id: `risk-coverage-gap-${reviewDigest(seed)}`,
+      sourceKind: "risk-signal",
+      sourceReference,
+      description: `Risk signal ${signal} has evidence but no configured security mapping.`,
+      evidenceIds,
+    });
+  }
+
+  return RiskCoverageSchema.parse({
+    status: gaps.length > 0 ? "incomplete" : "complete",
+    mappedSurfaceIds: mappedSurfaceIds.sort(),
+    mappedRiskSignals: [...new Set(exploration.risk.findings.map((finding) => finding.signal)
+      .filter((signal) => mappedSignals.has(signal)))].sort(),
+    gaps: gaps.sort((left, right) => left.id.localeCompare(right.id)),
+  });
 }
