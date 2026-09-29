@@ -16,6 +16,8 @@ export const KnowledgeKindSchema = z.enum([
   "reference",
 ]);
 
+export const KnowledgeContextSourceSchema = z.enum(["project-context"]);
+
 export const KnowledgeApplicabilitySelectorSchema = z.object({
   always: z.boolean().default(false),
   phases: z.array(WorkflowPhaseIdSchema).default([]),
@@ -25,6 +27,7 @@ export const KnowledgeApplicabilitySelectorSchema = z.object({
   technologies: z.array(z.string().min(1)).default([]),
   capabilities: z.array(z.string().min(1)).default([]),
   pathPrefixes: z.array(PortableReferenceSchema).default([]),
+  contextSources: z.array(KnowledgeContextSourceSchema).default([]),
 }).strict().superRefine((selector, context) => {
   if (
     !selector.always &&
@@ -34,7 +37,8 @@ export const KnowledgeApplicabilitySelectorSchema = z.object({
     selector.signals.length === 0 &&
     selector.technologies.length === 0 &&
     selector.capabilities.length === 0 &&
-    selector.pathPrefixes.length === 0
+    selector.pathPrefixes.length === 0 &&
+    selector.contextSources.length === 0
   ) {
     context.addIssue({
       code: "custom",
@@ -91,6 +95,7 @@ export const KnowledgeResolutionContextSchema = z.object({
   technologies: z.array(z.string().min(1)),
   capabilities: z.array(z.string().min(1)),
   affectedPaths: z.array(PortableReferenceSchema),
+  contextSources: z.array(KnowledgeContextSourceSchema).default([]),
 }).strict();
 
 export const ContextManifestSelectionSchema = z.object({

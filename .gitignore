@@ -3,4 +3,5 @@ dist/
 coverage/
 .azevedo/evidence/
 .azevedo/candidates/
+var/
 .DS_Store

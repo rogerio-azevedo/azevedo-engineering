@@ -1,7 +1,7 @@
 # Arquitetura do Azevedo Engineering
 
-- Status: base arquitetural aprovada; Review Hardening v0.7.1
-- Atualização: 2026-09-28
+- Status: base arquitetural aprovada; Project Onboarding v0.8.0
+- Atualização: 2026-09-29
 - Pacote previsto: `@azevedo/engineering`
 - Configuração local: `azevedo.config.yaml`
 - Estado local: `.azevedo/`
@@ -794,3 +794,19 @@ A v0.7.1 preserva a Guided Execution v0.6.1 e o Review & Security v0.7, endurece
 - `RiskCoverage` e avaliações explícitas para surfaces/signals sem mapping.
 
 O trabalho para na preparação, submissão estruturada e registro disciplinado de review. O core possui readiness, contexto, sessão, scope control, verification e review runtimes, mas não possui loop autônomo nem integração de provider. Correção automática, PR/commit/push, deployment, memória/learning, multi-agent, provider selection, update, migration do harness, rollback transacional, `--force`, prompts interativos, demais adapters, plugin, hooks, MCP, scaffold, auto-update e publicação NPM pertencem a incrementos posteriores sujeitos a aprovação.
+
+## 17. Project Onboarding v0.8
+
+O Azevedo conhece projetos externos sem ser instalado neles. `project onboard` é read-only no target. O perfil fica em `<workspace>/var/projects/<projectId>/`, com `project.json`, `current.json` e `snapshots/`. Bindings locais ficam em `<workspace>/var/local/bindings/`. `var/` é dado local desta versão, não o formato final de distribuição.
+
+`projectId` é atribuído uma vez e não é recalculado quando o checkout muda. O digest de identidade cobre id, nome e repositories, nunca path absoluto, branch ou revision. O ponteiro `current.json` é o snapshot atual do registry e não é um Git HEAD.
+
+Observations, facts e knowledge são níveis diferentes. Onboarding emite facts com evidence. Knowledge só entra por submission e accept explícitos. A revalidação não pode exceder a cobertura da evidence: existence pode ser revalidada localmente; enumeration exige listagem completa; behavior não é marcado como validado só porque um arquivo antigo não mudou.
+
+`ProjectContext` é a source of truth estruturada. A saída humana é projeção. O contexto orienta Exploration e é input não confiável para Review. Ele não autoriza mutation. Segredos são registrados só por presença de path.
+
+Leitura do target resolve o caminho real. Symlink intermediário, final ou aninhado só é seguido quando o alvo permanece dentro do repository. Fora dele, a leitura é recusada e nenhum nome externo entra no snapshot. Binding JSON inválido, schema inválido ou `projectId` divergente é erro operacional: o onboard não cria outra identidade e não repara o arquivo. `loadProject` percorre `previousSnapshotId` até null e rejeita snapshot ausente, projectId ou definitionDigest divergente, ciclo e id incoerente com o conteúdo.
+
+## 18. Limite da v0.8
+
+A v0.8 não publica o pacote, não cria installer global, MCP, embeddings, watchers, sync, extensão de IDE nem integração específica de provider. Não há `project bind`, promoção autônoma de knowledge nem integração do context ao runtime de `explore`/`plan`. `init` permanece disponível e continua escrevendo no target somente quando o usuário pede inicialização. Renomear o diretório do checkout e rodar onboard de novo não reassocia o projeto: remote, commit e o nome da pasta não são identidade. O id antigo permanece, com binding indisponível, e o path novo recebe outro id se nenhum `--project-id` existente for informado. Um fact de compose observado só pela presença do arquivo fica com qualidade indirect. O JSON de `inspect` inclui o path absoluto do binding em `live`, fora do digest de identidade.

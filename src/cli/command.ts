@@ -56,6 +56,7 @@ import { renderHumanExploration } from "./render-exploration.js";
 import { renderHumanInspection } from "./render-inspection.js";
 import { renderHumanInitialization } from "./render-initialization.js";
 import { renderHumanPlan } from "./render-plan.js";
+import { ProjectCliError, runProjectCli } from "./project-command.js";
 
 export const EXIT_SUCCESS = 0;
 export const EXIT_OPERATIONAL_ERROR = 1;
@@ -88,6 +89,9 @@ const GENERAL_HELP = `Usage:
   azevedo execute [path] --revision <revision-id> --prepare [--authorize-isolated-write] [--context-budget <tokens>] [--dry-run] [--json]
   azevedo review [path] --execution <execution-id> --base <git-ref> [--head <git-ref>] --prepare [--dry-run] [--json]
   azevedo review [path] --submission <file> [--dry-run] [--json]
+  azevedo project onboard <path> [--name <name>] [--project-id <id>] [--workspace <dir>] [--dry-run] [--json]
+  azevedo project list [--workspace <dir>] [--json]
+  azevedo project inspect <project-id> [--workspace <dir>] [--json]
 
 Commands:
   inspect    Inspect a project without modifying it
@@ -96,6 +100,7 @@ Commands:
   explore    Build evidence-backed implementation context without executing the plan
   execute    Prepare a bounded execution session; never invokes a coding provider
   review     Prepare review context or finalize a provider-neutral review submission
+  project    Onboard and inspect external projects without modifying them
 
 Options:
   --help     Show help
@@ -599,8 +604,19 @@ export function runCli(
       return EXIT_SUCCESS;
     }
 
-    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore" && command !== "execute" && command !== "review") {
+    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore" && command !== "execute" && command !== "review" && command !== "project") {
       throw new CliError(`Unknown command: ${command}`, EXIT_INVALID_USAGE);
+    }
+
+    if (command === "project") {
+      try {
+        const result = runProjectCli(commandArguments, options.cwd);
+        io.stdout(result.stdout);
+        return result.exitCode;
+      } catch (error) {
+        if (error instanceof ProjectCliError) throw new CliError(error.message, error.exitCode);
+        throw new CliError(`Project command failed: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+      }
     }
 
     if (command === "inspect") {

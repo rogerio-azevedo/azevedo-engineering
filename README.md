@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.7.1 endurece a semântica evidence-backed de Review & Security, mantendo o core provider-neutral, compatibilidade com artifacts v0.7 e toda escrita de source sob autorização explícita.
+Engineering harness reutilizável para coding agents. A v0.8.0 adiciona onboarding read-only de projetos externos e um Project Context persistente no workspace do Azevedo, sem escrever no target e sem acoplar o core a um provider.
 
 ## Inspect
 
@@ -138,6 +138,20 @@ Exit codes:
 | `0` | Operação concluída; em `execute`, readiness está `ready` |
 | `1` | Erro operacional, conflito ou execution readiness `blocked` |
 | `2` | Comando, opção ou argumento inválido |
+
+## Project
+
+```bash
+azevedo project onboard ~/Projetos/SindicoPro --name "Síndico Pro"
+azevedo project list
+azevedo project inspect sindico-pro --json
+```
+
+`project onboard` lê um projeto externo e grava o perfil somente em `<workspace>/var/`. O target não recebe `AGENTS.md`, `azevedo.config.yaml`, `.azevedo/` nem dependências. O workspace padrão é o diretório atual; use `--workspace` quando ele não for o Azevedo Engineering.
+
+`project inspect` revalida os facts contra o checkout local e emite um `ProjectContext`. Esse contexto reduz rediscovery. Ele não substitui Exploration, não autoriza mutation e não é evidência para Review.
+
+O `projectId` é atribuído uma vez. O path local fica num binding separado. `init` continua sendo outra operação: instala o harness dentro de um target. Onboarding não faz isso.
 
 ## Desenvolvimento local
 

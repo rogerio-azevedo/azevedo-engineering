@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
+import { reviewDigest } from "../filesystem/canonical-digest.js";
 import { ProjectRelativePathSchema } from "../exploration/exploration-artifact.js";
 import { ContextManifestSchema } from "../knowledge/knowledge-unit.js";
 import { PersistedAcceptanceCriterionSchema } from "../planning/plan-revision.js";
@@ -486,16 +486,4 @@ export type ConsolidatedFinding = z.infer<typeof ConsolidatedFindingSchema>;
 export type ReviewReadiness = z.infer<typeof ReviewReadinessSchema>;
 export type ReviewReport = z.infer<typeof ReviewReportSchema>;
 
-function canonicalReviewValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalReviewValue);
-  if (value !== null && typeof value === "object") return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, canonicalReviewValue(item)]),
-  );
-  return value;
-}
-
-export function reviewDigest(value: unknown, length = 12): string {
-  return createHash("sha256").update(JSON.stringify(canonicalReviewValue(value))).digest("hex").slice(0, length);
-}
+export { reviewDigest };

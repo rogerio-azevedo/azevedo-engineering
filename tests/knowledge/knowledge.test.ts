@@ -19,7 +19,7 @@ const baseContext = {
 };
 
 test("the initial knowledge catalog is small, valid, and fully provenance-linked", () => {
-  assert.equal(KNOWLEDGE_CATALOG.length, 21);
+  assert.equal(KNOWLEDGE_CATALOG.length, 23);
   for (const unit of KNOWLEDGE_CATALOG) {
     assert.deepEqual(KnowledgeUnitSchema.parse(unit), unit);
     assert.ok(unit.provenance.sources.length > 0);
@@ -123,4 +123,15 @@ test("required knowledge is included and missing dependencies or selected confli
     always("knowledge.left", { conflictsWith: ["knowledge.right"] }),
     always("knowledge.right"),
   ], baseContext), /conflict/);
+});
+
+test("project context knowledge is selected only when a project context is in scope", () => {
+  const withoutProject = resolveContextManifest(KNOWLEDGE_CATALOG, baseContext);
+  assert.equal(withoutProject.selected.some((selection) => selection.id.startsWith("knowledge.project.")), false);
+  const withProject = resolveContextManifest(KNOWLEDGE_CATALOG, {
+    ...baseContext,
+    contextSources: ["project-context"],
+  });
+  assert.ok(withProject.selected.some((selection) => selection.id === "knowledge.project.context-use"));
+  assert.ok(withProject.selected.some((selection) => selection.id === "knowledge.project.claim-revalidation"));
 });

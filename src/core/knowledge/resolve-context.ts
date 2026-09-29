@@ -1,14 +1,16 @@
 import { posix } from "node:path";
+import type { z } from "zod";
 import {
   ContextManifestSchema,
   KnowledgeApplicabilitySelectorSchema,
   KnowledgeResolutionContextSchema,
   KnowledgeUnitSchema,
   type ContextManifest,
-  type KnowledgeApplicabilitySelector,
-  type KnowledgeResolutionContext,
   type KnowledgeUnit,
 } from "./knowledge-unit.js";
+
+type SelectorInput = z.input<typeof KnowledgeApplicabilitySelectorSchema>;
+type ResolutionInput = z.input<typeof KnowledgeResolutionContextSchema>;
 
 function intersects(left: readonly string[], right: readonly string[]): boolean {
   const rightSet = new Set(right);
@@ -27,8 +29,8 @@ function pathMatches(prefix: string, path: string): boolean {
 }
 
 export function selectorMatches(
-  rawSelector: KnowledgeApplicabilitySelector,
-  rawContext: KnowledgeResolutionContext,
+  rawSelector: SelectorInput,
+  rawContext: ResolutionInput,
 ): boolean {
   const selector = KnowledgeApplicabilitySelectorSchema.parse(rawSelector);
   const context = KnowledgeResolutionContextSchema.parse(rawContext);
@@ -43,10 +45,11 @@ export function selectorMatches(
     selector.pathPrefixes.length > 0 &&
     !selector.pathPrefixes.some((prefix) => context.affectedPaths.some((path) => pathMatches(prefix, path)))
   ) return false;
+  if (selector.contextSources.length > 0 && !intersects(selector.contextSources, context.contextSources)) return false;
   return true;
 }
 
-function selectionReasons(unit: KnowledgeUnit, context: KnowledgeResolutionContext): string[] {
+function selectionReasons(unit: KnowledgeUnit, context: z.infer<typeof KnowledgeResolutionContextSchema>): string[] {
   const reasons = new Set<string>();
   for (const selector of unit.appliesWhen) {
     if (!selectorMatches(selector, context)) continue;
@@ -60,13 +63,16 @@ function selectionReasons(unit: KnowledgeUnit, context: KnowledgeResolutionConte
     for (const prefix of selector.pathPrefixes) {
       if (context.affectedPaths.some((path) => pathMatches(prefix, path))) reasons.add(`path-prefix:${normalizePath(prefix)}`);
     }
+    for (const source of selector.contextSources.filter((value) => context.contextSources.includes(value))) {
+      reasons.add(`context-source:${source}`);
+    }
   }
   return [...reasons].sort();
 }
 
 export function resolveContextManifest(
   rawCatalog: readonly KnowledgeUnit[],
-  rawContext: KnowledgeResolutionContext,
+  rawContext: ResolutionInput,
 ): ContextManifest {
   const context = KnowledgeResolutionContextSchema.parse(rawContext);
   const catalog = rawCatalog.map((unit) => KnowledgeUnitSchema.parse(unit));
