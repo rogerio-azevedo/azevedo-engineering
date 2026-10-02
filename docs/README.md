@@ -10,7 +10,7 @@ Leia nesta ordem se estiver operando o Azevedo. O restante é histórico.
 
 ## Decisões
 
-`docs/decisions/` guarda ADRs aceitos. Eles explicam por que o contrato é assim. Não são um tutorial. O ADR da v0.8 é o [0015](decisions/0015-project-onboarding-and-persistent-context.md). O ADR da v0.9.0 é o [0016](decisions/0016-project-work-lifecycle.md).
+`docs/decisions/` guarda ADRs aceitos. Eles explicam por que o contrato é assim. Não são um tutorial. O ADR da v0.8 é o [0015](decisions/0015-project-onboarding-and-persistent-context.md). O ADR da v0.9.0 é o [0016](decisions/0016-project-work-lifecycle.md). O [0017](decisions/0017-agent-led-engineering-skills-rules-checks.md) muda a direção e congela o control plane.
 
 ## Pesquisa
 

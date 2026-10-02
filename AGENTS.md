@@ -4,6 +4,10 @@ Este repositório é o engineering harness. O diretório aberto pode não ser o 
 
 O Azevedo opera sobre projetos externos. Um projeto conhecido está no Project Registry do workspace (`var/projects/`), não necessariamente no diretório atual. O path local de um checkout fica em `var/local/bindings/` e não é a identidade do projeto.
 
+## Direção vigente
+
+A [ADR-0017](docs/decisions/0017-agent-led-engineering-skills-rules-checks.md) muda a direção: o coding agent é o desenvolvedor, e o Azevedo fornece skills, rules, checks e review. O control plane descrito abaixo está congelado. Ele continua funcional, mas não recebe features nem hardening. A tag `v0.9.0-control-plane` marca seu último commit.
+
 ## Lifecycle
 
 Para um projeto já onboarded, o fluxo v0.9.0 para no plano:
