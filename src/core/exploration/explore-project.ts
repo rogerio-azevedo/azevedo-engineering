@@ -184,6 +184,16 @@ function tokens(value: string): string[] {
   return [...new Set(normalizeText(value).split(/[^a-z0-9]+/).filter((term) => term.length > 2 && !STOP_WORDS.has(term)))];
 }
 
+export function expandIntentTerms(value: string): string[] {
+  const base = tokens(value);
+  const expanded = new Set(base);
+  for (const token of base) {
+    const group = TERM_GROUPS.find((terms) => terms.includes(token));
+    if (group) for (const term of group) expanded.add(term);
+  }
+  return [...expanded].sort();
+}
+
 function sourceText(specification: FeatureSpecification): string {
   return [
     specification.title,

@@ -1,6 +1,6 @@
 # Azevedo Engineering
 
-Engineering harness reutilizável para coding agents. A v0.8.0 adiciona onboarding read-only de projetos externos e um Project Context persistente no workspace do Azevedo, sem escrever no target e sem acoplar o core a um provider.
+Engineering harness reutilizável para coding agents. A v0.9.0 acrescenta o lifecycle de WorkItem no workspace: specification, exploration, relevance e engineering plan. O target não recebe harness. O core continua independente de provider. A v0.8.0 permanece a base de onboarding read-only e de Project Context.
 
 ## Inspect
 
@@ -152,6 +152,24 @@ azevedo project inspect sindico-pro --json
 `project inspect` revalida os facts contra o checkout local e emite um `ProjectContext`. Esse contexto reduz rediscovery. Ele não substitui Exploration, não autoriza mutation e não é evidência para Review.
 
 O `projectId` é atribuído uma vez. O path local fica num binding separado. `init` continua sendo outra operação: instala o harness dentro de um target. Onboarding não faz isso.
+
+## Work
+
+```bash
+azevedo work create --project sindico-pro --task "Uma Sugestão de Melhoria pode ser criada a partir de uma Ocorrência existente."
+azevedo work specify --work-item <work-item-id>
+azevedo work specify --work-item <work-item-id> --spec ./specification.json
+azevedo explore --work-item <work-item-id>
+azevedo plan --work-item <work-item-id>
+```
+
+Esse fluxo exige um projeto já onboarded. Não exige `init` e não grava `AGENTS.md`, `azevedo.config.yaml` nem `.azevedo/` no target. Os artifacts ficam em `<workspace>/var/projects/<projectId>/work-items/`.
+
+`work create` reencontra a mesma identidade para o mesmo projeto e o mesmo objective. O conjunto de repositories gravado é imutável: um conjunto incompatível falha fechado. `work specify` sem arquivo grava a specification mínima do objective, sem inventar acceptance criteria. Com `--spec`, o arquivo é a autoridade e o objective tem de ser o do WorkItem.
+
+`explore --work-item` percorre os repositories do WorkItem. `ProjectContext` só orienta a busca. `RELEVANT` pode sair de evidência positiva localizada. `NOT_RELEVANT` exige cobertura suficiente; região in-scope não examinada, poda ou budget esgotado permanecem `UNKNOWN`. Evidência positiva não apaga limitação de budget. `plan --work-item` não grava plano enquanto houver repository `UNKNOWN`, acceptance criteria ausente, open question não resolvida, ou exploration cuja revisão não corresponde ao checkout. Plano vazio não é sucesso.
+
+Não combine path e `--work-item` na mesma invocation. `azevedo plan <path> --task ...` e `azevedo explore <path> --plan <plan-id>` continuam o fluxo legado e ainda exigem `init` no target. Execution, Verification e Review pelo control plane não fazem parte desta versão.
 
 ## Desenvolvimento local
 

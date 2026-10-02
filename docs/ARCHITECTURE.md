@@ -704,6 +704,10 @@ Skills terão casos positivos, negativos, indiretos, incompletos e adversariais.
 36. Required AC em N/A exige claim de responsabilidade com evidence forte e challenge logicamente distinto.
 37. Invocation provenance pode provar invocações distintas, nunca independência de provider por inferência.
 38. Coverage gap exige decisão evidence-backed e pode ser bloqueante ou não bloqueante conforme impacto.
+39. Onboarding é read-only no target. O perfil fica no workspace. Knowledge não nasce de fact.
+40. Um WorkItem é uma intenção de produto. O conjunto de repositories persistido é imutável. Exploration não exige EngineeringPlan.
+41. Relevance é resultado da exploration atual. UNKNOWN preserva a causa. ProjectContext orienta e não autoriza.
+42. O plano v0.9 registra a basis da specification e das explorations. Não há EngineeringPlanRevision nesse lifecycle. Plano vazio não é gravado.
 
 ADRs relacionados:
 
@@ -721,6 +725,8 @@ ADRs relacionados:
 - [ADR-0012 — Command Effect Safety and Workspace Binding](decisions/0012-command-effect-safety.md)
 - [ADR-0013 — Evidence-backed Review Architecture](decisions/0013-evidence-backed-review-architecture.md)
 - [ADR-0014 — Review Semantic Hardening](decisions/0014-review-semantic-hardening.md)
+- [ADR-0015 — Project onboarding and persistent context](decisions/0015-project-onboarding-and-persistent-context.md)
+- [ADR-0016 — Project work lifecycle](decisions/0016-project-work-lifecycle.md)
 
 ## 16. Limite da v0.7.1
 
@@ -809,4 +815,34 @@ Leitura do target resolve o caminho real. Symlink intermediário, final ou aninh
 
 ## 18. Limite da v0.8
 
-A v0.8 não publica o pacote, não cria installer global, MCP, embeddings, watchers, sync, extensão de IDE nem integração específica de provider. Não há `project bind`, promoção autônoma de knowledge nem integração do context ao runtime de `explore`/`plan`. `init` permanece disponível e continua escrevendo no target somente quando o usuário pede inicialização. Renomear o diretório do checkout e rodar onboard de novo não reassocia o projeto: remote, commit e o nome da pasta não são identidade. O id antigo permanece, com binding indisponível, e o path novo recebe outro id se nenhum `--project-id` existente for informado. Um fact de compose observado só pela presença do arquivo fica com qualidade indirect. O JSON de `inspect` inclui o path absoluto do binding em `live`, fora do digest de identidade.
+A v0.8 não publica o pacote, não cria installer global, MCP, embeddings, watchers, sync, extensão de IDE nem integração específica de provider. Não há `project bind` nem promoção autônoma de knowledge. O `explore` e o `plan` por path continuam sem `contextSources`. `init` permanece disponível e continua escrevendo no target somente quando o usuário pede inicialização. Renomear o diretório do checkout e rodar onboard de novo não reassocia o projeto: remote, commit e o nome da pasta não são identidade. O id antigo permanece, com binding indisponível, e o path novo recebe outro id se nenhum `--project-id` existente for informado. Um fact de compose observado só pela presença do arquivo fica com qualidade indirect. O JSON de `inspect` inclui o path absoluto do binding em `live`, fora do digest de identidade.
+
+## 19. Project Work Lifecycle v0.9.0
+
+O lifecycle novo vive no control plane do workspace e para no Engineering Plan:
+
+Project → WorkItem → Specification → Exploration → Repository Relevance → Coordinated Engineering Plan → repository Engineering Plans.
+
+`EngineeringPlan` legado não é prerequisite. Não há plano fake para reutilizar `exploreProject`. Os artifacts novos têm kind próprio: `work-item`, `work-item-specification`, `repository-exploration`, `work-coordinated-plan`, `repository-engineering-plan`.
+
+A identidade do WorkItem é `projectId` + objective. O conjunto de repositories gravado na criação faz parte do contrato imutável. Uma chamada posterior com o mesmo id e outro conjunto falha fechado. Um repository acrescentado ao Project depois não entra no WorkItem existente.
+
+Cada repository começa `UNKNOWN` com causa `not-explored`. Binding ausente permanece `UNKNOWN` com causa `binding-unavailable` e sem path inventado. Budget esgotado, evidência insuficiente ou exploration bloqueada reutilizam `ExplorationStopReason` na causa `exploration`.
+
+`RELEVANT` pode ser sustentado por evidência positiva localizada, mesmo com reconnaissance parcial. `NOT_RELEVANT` exige cobertura suficiente do claim scope: regiões examinadas, nenhuma região in-scope por examinar, e evidence da exploration atual. Diretório podado, listagem truncada ou budget esgotado impedem a conclusão negativa e permanecem `UNKNOWN`. Evidência positiva não apaga a limitação: `coverage.budgetLimited` e `coverage.complete` continuam visíveis, e o `stopReason` pode ser `budget-exhausted` junto de `RELEVANT`. Fact ausente no ProjectContext não produz `NOT_RELEVANT`.
+
+A specification mínima preserva objective e open questions fornecidas. Não inventa acceptance criteria e não transforma código em requirement. Sem criteria, ou com open question não resolvida, `plan` para como `needs-product-decision` e não grava plano. Qualquer repository `UNKNOWN` também bloqueia o plano. Checkout divergente da `sourceRevision` da exploration bloqueia como `stale-exploration`, sem reexplore automático e sem alterar o target.
+
+Na carga, `pointer.repositories` tem de ser o mesmo conjunto canônico de `item.repositoryIds`. Divergência falha fechado antes de exploration, plano ou artifact novo. A identidade de WorkItem, Specification, Exploration e dos planos desta versão é recalculada a partir do conteúdo. Conteúdo que não reproduz o id falha fechado. Symlink que escape o diretório do work item, inclusive aninhado, falha fechado: o ponteiro não é escrito fora do workspace e não é reparado.
+
+O plano que chega a ser gravado cita `workItemId`, `projectId`, `repositoryId`, `specificationId` e os ids exatos das explorations da specification corrente. Exploration de outra specification, de outro repository ou de outro WorkItem não é basis. Não há `previousPlanId` nem `EngineeringPlanRevision` neste modo. `affectedPaths` não é preenchido com fact do contexto nem com evidência de integração. Plans de repository existem só para `RELEVANT`.
+
+`ProjectContext` orienta a estratégia e fornece facts classificados. Os boundaries permanecem `authorizesMutation: false`, `replacesExploration: false`, `reviewTrust: untrusted-context`. `contextSources: ["project-context"]` entra só neste lifecycle. Facts stale não viram affected path nem decidem relevance.
+
+A persistência fica em `var/projects/<projectId>/work-items/<workItemId>/`. Artifacts portáteis usam ids e paths relativos. Path absoluto continua só no binding local. Blobs são create-only. O ponteiro `current.json` avança por rename atômico e não é reescrito quando os bytes são iguais.
+
+O CLI mínimo é `work create`, `work specify`, `explore --work-item` e `plan --work-item`. Não exige `init` e não grava harness no target. Misturar path e `--work-item` na mesma invocation falha. Execution, Verification e Review pelo control plane ficam fora desta versão. O CLI por path, os ids legados e o hash `JSON.stringify` dos planos antigos permanecem.
+
+## 20. Limite da v0.9.0
+
+A v0.9.0 não executa, não verifica e não revisa pelo control plane. Não migra `.azevedo` legado, não reinterpreta artifact antigo e não altera o digest canônico da v0.8. Não promove ProjectKnowledge. Não publica o pacote. `project bind` e a reassociação de checkout renomeado continuam fora. A reconnaissance é determinística e limitada: diretórios estruturais e termos da intenção orientam a descida; leitura profunda só acontece dentro do budget. Aumentar o budget ou acrescentar um diretório à lista estrutural não substitui o registro de cobertura. Candidato lexical, inclusive texto `SUGGESTION`, não é requirement. Padrão análogo `from-occurrence` também não é requirement e não fecha open question.

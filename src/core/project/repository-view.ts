@@ -51,14 +51,22 @@ function realInside(root: string, absolute: string): string | null {
   }
 }
 
-export function createRepositoryView(root: string, repositoryId: string, revision: string | null): RepositoryView {
+export function createRepositoryView(
+  root: string,
+  repositoryId: string,
+  revision: string | null,
+  limits?: { maxReads?: number; maxListings?: number; maxListingEntries?: number },
+): RepositoryView {
+  const maxReads = limits?.maxReads ?? MAX_READS;
+  const maxListings = limits?.maxListings ?? MAX_LISTINGS;
+  const maxListingEntries = limits?.maxListingEntries ?? MAX_LISTING_ENTRIES;
   const realRoot = realpathSync(root);
   let filesRead = 0;
   let listings = 0;
   let exhausted = false;
 
   const markRead = (): boolean => {
-    if (filesRead >= MAX_READS) {
+    if (filesRead >= maxReads) {
       exhausted = true;
       return false;
     }
@@ -103,7 +111,7 @@ export function createRepositoryView(root: string, repositoryId: string, revisio
       const absolute = lexical(realRoot, relativePath);
       const real = absolute ? realInside(realRoot, absolute) : null;
       if (!real) return { entries: [], coverage: "truncated" };
-      if (listings >= MAX_LISTINGS) {
+      if (listings >= maxListings) {
         exhausted = true;
         return { entries: [], coverage: "truncated" };
       }
@@ -114,9 +122,9 @@ export function createRepositoryView(root: string, repositoryId: string, revisio
       } catch {
         return { entries: [], coverage: "complete" };
       }
-      if (names.length > MAX_LISTING_ENTRIES) {
+      if (names.length > maxListingEntries) {
         exhausted = true;
-        return { entries: names.slice(0, MAX_LISTING_ENTRIES), coverage: "truncated" };
+        return { entries: names.slice(0, maxListingEntries), coverage: "truncated" };
       }
       return { entries: names, coverage: "complete" };
     },

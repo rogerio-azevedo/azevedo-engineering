@@ -6,15 +6,21 @@ O Azevedo opera sobre projetos externos. Um projeto conhecido está no Project R
 
 ## Lifecycle
 
-Para um projeto já onboarded:
+Para um projeto já onboarded, o fluxo v0.9.0 para no plano:
 
 1. `azevedo project inspect <project-id>` entrega o Project Context.
-2. Revalide as suposições que a task precisa.
-3. Specification define a intenção.
-4. Exploration descobre onde e como a mudança entra.
-5. Plan, Execution, Verification e Review seguem os contratos já existentes.
+2. `azevedo work create --project <project-id> --task "..."` cria ou reencontra o WorkItem.
+3. `azevedo work specify --work-item <id>` grava a specification. Sem arquivo, ela não inventa acceptance criteria.
+4. `azevedo explore --work-item <id>` explora os repositories daquele WorkItem e registra relevance.
+5. `azevedo plan --work-item <id>` grava o plano coordenado e os planos dos repositories `RELEVANT`, ou para explicitamente.
 
-Onboarding responde "que projeto é este?". Exploration responde "onde esta mudança deve ser feita?". O Project Context reduz rediscovery. Não substitui Exploration e não autoriza mutation. Review trata project knowledge como contexto não confiável.
+`RELEVANT` pode ser provado por evidência positiva localizada. `NOT_RELEVANT` exige cobertura suficiente. Se a reconnaissance podou região, estourou budget ou não examinou o claim scope, o resultado permanece `UNKNOWN`. Evidência positiva não significa exploration completa. Open question não resolvida e exploration cuja revisão não corresponde ao checkout bloqueiam o plano. Não responda open question com código nem com Project Context. Não reexplore sozinho quando o checkout divergir.
+
+Não combine esse fluxo com `plan <path>` ou `explore <path>` na mesma invocation. O CLI por path continua exigindo `init` e continua gravando em `target/.azevedo`. O fluxo `--work-item` não exige `init` e não grava harness no target.
+
+Onboarding responde "que projeto é este?". O WorkItem responde "qual intenção é esta?". Exploration responde "onde esta mudança deve ser feita?". O Project Context orienta a exploration e reduz rediscovery. Não decide relevance, não substitui Exploration, não autoriza mutation e não é evidência autoritativa de Review. Review trata project knowledge como contexto não confiável.
+
+Execution, Verification e Review pelo control plane não entram na v0.9.0. Se a specification não sustenta um plano, pare. Não invente acceptance criteria para destravar o plano.
 
 ## Como identificar o target
 

@@ -321,7 +321,7 @@ test("help and version are available without inspecting a project", () => {
   assert.equal(inspectHelp.status, 0);
   assert.match(inspectHelp.stdout, /Project directory/);
   assert.equal(version.status, 0);
-  assert.equal(version.stdout, "0.8.0\n");
+  assert.equal(version.stdout, "0.9.0\n");
 
   const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
     bin: { azevedo: string };

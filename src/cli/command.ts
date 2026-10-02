@@ -57,6 +57,7 @@ import { renderHumanInspection } from "./render-inspection.js";
 import { renderHumanInitialization } from "./render-initialization.js";
 import { renderHumanPlan } from "./render-plan.js";
 import { ProjectCliError, runProjectCli } from "./project-command.js";
+import { runWorkCli, runWorkItemExploration, runWorkItemPlan, WorkCliError } from "./work-command.js";
 
 export const EXIT_SUCCESS = 0;
 export const EXIT_OPERATIONAL_ERROR = 1;
@@ -92,6 +93,10 @@ const GENERAL_HELP = `Usage:
   azevedo project onboard <path> [--name <name>] [--project-id <id>] [--workspace <dir>] [--dry-run] [--json]
   azevedo project list [--workspace <dir>] [--json]
   azevedo project inspect <project-id> [--workspace <dir>] [--json]
+  azevedo work create --project <project-id> --task <task> [--json]
+  azevedo work specify --work-item <work-item-id> [--spec <file>] [--json]
+  azevedo explore --work-item <work-item-id> [--json]
+  azevedo plan --work-item <work-item-id> [--json]
 
 Commands:
   inspect    Inspect a project without modifying it
@@ -101,6 +106,10 @@ Commands:
   execute    Prepare a bounded execution session; never invokes a coding provider
   review     Prepare review context or finalize a provider-neutral review submission
   project    Onboard and inspect external projects without modifying them
+  work       Create or specify a work item in the workspace control plane
+
+Path mode and work-item mode cannot be combined in one invocation.
+Work-item commands do not require init and do not write into the target.
 
 Options:
   --help     Show help
@@ -132,24 +141,28 @@ Options:
 
 const PLAN_HELP = `Usage:
   azevedo plan [path] --task <task> [--json]
+  azevedo plan --work-item <work-item-id> [--json]
 
 Arguments:
   path       Initialized project directory (default: current directory)
 
 Options:
-  --task     Required engineering task description
+  --task     Required engineering task description for path mode
+  --work-item  Plan a work item after exploration. Cannot be combined with a path or --task
   --json     Output machine-readable JSON
   --help     Show help
 `;
 
 const EXPLORE_HELP = `Usage:
   azevedo explore [path] --plan <plan-id> [--spec <file>] [--dry-run] [--json]
+  azevedo explore --work-item <work-item-id> [--json]
 
 Arguments:
   path       Initialized project directory (default: current directory)
 
 Options:
-  --plan     Required deterministic plan id
+  --plan     Required deterministic plan id for path mode
+  --work-item  Explore a work item. Cannot be combined with a path, --plan, or --spec
   --spec     Optional JSON specification input; defaults to the plan task
   --dry-run  Explore and validate without writing artifacts
   --json     Output machine-readable JSON
@@ -604,7 +617,7 @@ export function runCli(
       return EXIT_SUCCESS;
     }
 
-    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore" && command !== "execute" && command !== "review" && command !== "project") {
+    if (command !== "inspect" && command !== "init" && command !== "plan" && command !== "explore" && command !== "execute" && command !== "review" && command !== "project" && command !== "work") {
       throw new CliError(`Unknown command: ${command}`, EXIT_INVALID_USAGE);
     }
 
@@ -616,6 +629,17 @@ export function runCli(
       } catch (error) {
         if (error instanceof ProjectCliError) throw new CliError(error.message, error.exitCode);
         throw new CliError(`Project command failed: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+      }
+    }
+
+    if (command === "work") {
+      try {
+        const result = runWorkCli(commandArguments, options.cwd);
+        io.stdout(result.stdout);
+        return result.exitCode;
+      } catch (error) {
+        if (error instanceof WorkCliError) throw new CliError(error.message, error.exitCode);
+        throw new CliError(`Work command failed: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
       }
     }
 
@@ -641,6 +665,16 @@ export function runCli(
     }
 
     if (command === "plan") {
+      if (commandArguments.includes("--work-item")) {
+        try {
+          const result = runWorkItemPlan(commandArguments, options.cwd);
+          io.stdout(result.stdout);
+          return result.exitCode;
+        } catch (error) {
+          if (error instanceof WorkCliError) throw new CliError(error.message, error.exitCode);
+          throw new CliError(`Plan failed: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+        }
+      }
       const planArguments = parsePlanArguments(commandArguments);
       if (planArguments.help) {
         io.stdout(PLAN_HELP);
@@ -675,6 +709,16 @@ export function runCli(
     }
 
     if (command === "explore") {
+      if (commandArguments.includes("--work-item")) {
+        try {
+          const result = runWorkItemExploration(commandArguments, options.cwd);
+          io.stdout(result.stdout);
+          return result.exitCode;
+        } catch (error) {
+          if (error instanceof WorkCliError) throw new CliError(error.message, error.exitCode);
+          throw new CliError(`Exploration failed: ${describeError(error)}`, EXIT_OPERATIONAL_ERROR);
+        }
+      }
       const exploreArguments = parseExploreArguments(commandArguments);
       if (exploreArguments.help) {
         io.stdout(EXPLORE_HELP);
